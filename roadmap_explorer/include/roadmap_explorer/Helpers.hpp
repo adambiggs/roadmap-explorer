@@ -6,14 +6,15 @@
 
 #include <nav2_costmap_2d/costmap_2d.hpp>
 #include <nav_msgs/msg/path.hpp>
-#include <nav2_navfn_planner/navfn.hpp>
 
 #include "roadmap_explorer/Frontier.hpp"
 #include "roadmap_explorer/util/GeometryUtils.hpp"
-#include "roadmap_explorer/planners/theta_star.hpp"
 
 namespace roadmap_explorer
 {
+
+
+// ===================================  Ray tracing utility class  ===================================
 
 // The output of unknown_cells_ here is the total unknown cells until the end regardless of whether it hit a obstacle or not.
 
@@ -106,15 +107,13 @@ bool getTracedCells(
   double max_length,
   nav2_costmap_2d::Costmap2D * exploration_costmap_);
 
-// TODO(suchetan): A problematic function that needs fixing. Provide options to choose radius / nhood cell size. Also provide options to choose the lethal cell count threshold.
-bool surroundingCellsMapped(
-  geometry_msgs::msg::Point & checkPoint,
-  nav2_costmap_2d::Costmap2D & exploration_costmap_);
+// ===================================  End of Ray tracing related functions  ===================================
 
 bool isCircleFootprintInLethal(
   const nav2_costmap_2d::Costmap2D * costmap, unsigned int center_x,
   unsigned int center_y, double radius_in_cells);
 
+// declare these globally to avoid repeated memory allocation and to optimize nhood functions
 extern std::vector<unsigned int> nhood4_values;
 extern std::vector<unsigned int> nhood8_values;
 
@@ -128,21 +127,6 @@ bool nearestFreeCell(
   unsigned int & result, unsigned int start, unsigned char val,
   const nav2_costmap_2d::Costmap2D & costmap);
 
-Eigen::Affine3f getTransformFromPose(geometry_msgs::msg::Pose & pose);
-
-bool computePathBetweenPoints(
-  nav_msgs::msg::Path & path,
-  const geometry_msgs::msg::Point & start_point,
-  const geometry_msgs::msg::Point & goal_point,
-  bool planner_allow_unknown,
-  nav2_costmap_2d::Costmap2D * exploration_costmap_);
-
-bool computePathBetweenPointsThetaStar(
-  nav_msgs::msg::Path & path,
-  const geometry_msgs::msg::Point & start_point,
-  const geometry_msgs::msg::Point & goal_point,
-  bool planner_allow_unknown,
-  nav2_costmap_2d::Costmap2D * exploration_costmap_);
 }
 
 #endif // HELPERS_HPP

@@ -42,7 +42,7 @@ void ParameterHandler::makeParametersROS(std::shared_ptr<nav2_util::LifecycleNod
     node, "frontierSearch.lethal_threshold", rclcpp::ParameterValue(
       160));
   nav2_util::declare_parameter_if_not_declared(
-    node, "frontierSearch.max_frontier_search_distance", rclcpp::ParameterValue(
+    node, "frontierSearch.max_permissable_frontier_search_distance", rclcpp::ParameterValue(
       100.0));
 
   parameter_map_["frontierSearch.min_frontier_cluster_size"] = node->get_parameter(
@@ -53,8 +53,8 @@ void ParameterHandler::makeParametersROS(std::shared_ptr<nav2_util::LifecycleNod
     "frontierSearch.frontier_search_distance").as_double();
   parameter_map_["frontierSearch.lethal_threshold"] = node->get_parameter(
     "frontierSearch.lethal_threshold").as_int();
-  parameter_map_["frontierSearch.max_frontier_search_distance"] = node->get_parameter(
-    "frontierSearch.max_frontier_search_distance").as_double();
+  parameter_map_["frontierSearch.max_permissable_frontier_search_distance"] = node->get_parameter(
+    "frontierSearch.max_permissable_frontier_search_distance").as_double();
 
   // --- costCalculator ---
   nav2_util::declare_parameter_if_not_declared(
@@ -95,18 +95,17 @@ void ParameterHandler::makeParametersROS(std::shared_ptr<nav2_util::LifecycleNod
     "costCalculator.max_planning_distance_roadmap").as_double();
 
   // --- costAssigner ---
-  std::vector<std::string> default_cost_calculation_methods =
-  {"RoadmapPlannerDistance", "ArrivalInformation"};
-  // {"A*PlannerDistance", "ArrivalInformation"};
-  // {"EuclideanDistance", "ArrivalInformation"};
-  // {"RandomCosts"};
-  // {};
   nav2_util::declare_parameter_if_not_declared(
-    node, "costAssigner.cost_calculation_methods", rclcpp::ParameterValue(
-      default_cost_calculation_methods));
+    node, "costAssigner.information_gain_plugin", rclcpp::ParameterValue(
+      "roadmap_explorer::CountBasedGain"));
+  nav2_util::declare_parameter_if_not_declared(
+    node, "costAssigner.planner_plugin", rclcpp::ParameterValue(
+      "roadmap_explorer::PluginFrontierRoadmap"));
 
-  parameter_map_["costAssigner.cost_calculation_methods"] =
-    node->get_parameter("costAssigner.cost_calculation_methods").as_string_array();
+  parameter_map_["costAssigner.information_gain_plugin"] =
+    node->get_parameter("costAssigner.information_gain_plugin").as_string();
+  parameter_map_["costAssigner.planner_plugin"] =
+    node->get_parameter("costAssigner.planner_plugin").as_string();
 
   // --- frontierRoadmap ---
   nav2_util::declare_parameter_if_not_declared(
@@ -282,8 +281,8 @@ void ParameterHandler::makeParametersYAMLcpp()
     loaded_node["frontierSearch"]["frontier_search_distance"].as<double>();
   parameter_map_["frontierSearch.lethal_threshold"] =
     loaded_node["frontierSearch"]["lethal_threshold"].as<int>();
-  parameter_map_["frontierSearch.max_frontier_search_distance"] =
-    loaded_node["frontierSearch"]["max_frontier_search_distance"].as<double>();
+  parameter_map_["frontierSearch.max_permissable_frontier_search_distance"] =
+    loaded_node["frontierSearch"]["max_permissable_frontier_search_distance"].as<double>();
 
   parameter_map_["costCalculator.max_camera_depth"] =
     loaded_node["costCalculator"]["max_camera_depth"].as<double>();
@@ -300,8 +299,10 @@ void ParameterHandler::makeParametersYAMLcpp()
   parameter_map_["costCalculator.max_planning_distance_roadmap"] =
     loaded_node["costCalculator"]["max_planning_distance_roadmap"].as<double>();
 
-  parameter_map_["costAssigner.cost_calculation_methods"] =
-    loaded_node["costAssigner"]["cost_calculation_methods"].as<std::vector<std::string>>();
+  parameter_map_["costAssigner.information_gain_plugin"] =
+    loaded_node["costAssigner"]["information_gain_plugin"].as<std::vector<std::string>>();
+  parameter_map_["costAssigner.planner_plugin"] =
+    loaded_node["costAssigner"]["planner_plugin"].as<std::vector<std::string>>();
 
   parameter_map_["frontierRoadmap.max_graph_reconstruction_distance"] =
     loaded_node["frontierRoadmap"]["max_graph_reconstruction_distance"].as<double>();

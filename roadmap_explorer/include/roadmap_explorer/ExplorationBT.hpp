@@ -16,6 +16,8 @@
 #include <geometry_msgs/msg/twist.hpp>
 #include <std_msgs/msg/int32.hpp>
 
+#include <pluginlib/class_loader.hpp>
+
 #ifdef ROS_DISTRO_HUMBLE
   #include <behaviortree_cpp_v3/bt_factory.h>
 #elif ROS_DISTRO_JAZZY || ROS_DISTRO_KILTED
@@ -28,26 +30,21 @@
 #include "roadmap_explorer/util/Logger.hpp"
 #include "roadmap_explorer/util/EventLogger.hpp"
 #include "roadmap_explorer/CostAssigner.hpp"
-#include "roadmap_explorer/FrontierSearch.hpp"
+#include "roadmap_explorer/frontier_search/BaseFrontierSearch.hpp"
+#include "roadmap_explorer/frontier_search/PluginBFSearch.hpp"
 #include "roadmap_explorer/Nav2Interface.hpp"
 #include "roadmap_explorer/Helpers.hpp"
 #include "roadmap_explorer/FullPathOptimizer.hpp"
 #include "roadmap_explorer/SensorSimulator.hpp"
 
 #include "roadmap_explorer_msgs/action/explore.hpp"
-#include "roadmap_explorer/bt_plugins/interface_pluginlib.hpp"
+#include "roadmap_explorer/bt_plugins/BaseBTPlugin.hpp"
+#include "roadmap_explorer/bt_plugins/BTContext.hpp"
 
 namespace roadmap_explorer
 {
 
 using ExploreActionResult = roadmap_explorer_msgs::action::Explore_Result;
-
-inline void blacklistFrontier(const FrontierPtr & frontier, BT::Blackboard::Ptr blackboard)
-{
-  auto blacklisted_frontiers = blackboard->get<std::shared_ptr<std::vector<FrontierPtr>>>(
-    "blacklisted_frontiers");
-  blacklisted_frontiers->push_back(frontier);
-}
 
 class RoadmapExplorationBT
 {
@@ -77,7 +74,7 @@ private:
   BT::Blackboard::Ptr blackboard;
   BT::Tree behaviour_tree;
 
-  std::shared_ptr<FrontierSearch> frontierSearchPtr_;
+  std::shared_ptr<FrontierSearchBase> frontierSearchPtr_;
   std::shared_ptr<CostAssigner> cost_assigner_ptr_;
   std::shared_ptr<FullPathOptimizer> full_path_optimizer_;
   std::shared_ptr<SensorSimulator> sensor_simulator_;

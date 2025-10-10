@@ -9,8 +9,6 @@
 #include <thread>
 #include <mutex>
 #include <random>
-#include <ctime>
-
 #include <iomanip>
 #include <sstream>
 #include <ctime>
@@ -28,9 +26,7 @@ public:
     std::lock_guard<std::mutex> lock(instanceMutex_);
     if (EventLoggerPtr_ == nullptr) {
       EventLoggerPtr_.reset(new EventLogger());
-    }
-    else
-    {
+    } else {
       throw RoadmapExplorerException("EventLogger instance already exists!");
     }
   }
@@ -72,6 +68,11 @@ public:
     outFile << ++serialNumber << "," << "planning_iteration" << "," << planningCount << "\n";
   }
 
+  int getPlanningCount() const
+  {
+    return planningCount;
+  }
+
 private:
   // Delete copy constructor and assignment operator to prevent copying
   EventLogger(const EventLogger &) = delete;
@@ -82,7 +83,9 @@ private:
   static std::mutex instanceMutex_;
   std::unordered_map<std::string, std::chrono::high_resolution_clock::time_point> startTimes;
   std::string csvFilename;
+  bool logToCSV;
   int serialNumber;
+  std::string baseFilename;
   std::mutex mapMutex;
   int planningCount;
 };
@@ -109,4 +112,4 @@ private:
 };
 
 #define PROFILE_FUNCTION Profiler profiler_instance(__func__);
-#endif // COLOR_H
+#endif // EVENT_LOGGER_HPP_
