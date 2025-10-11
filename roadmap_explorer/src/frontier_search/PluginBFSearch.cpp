@@ -18,28 +18,48 @@ FrontierBFSearch::~FrontierBFSearch()
   LOG_INFO("FrontierBFSearch::~FrontierBFSearch()");
 }
 
-void FrontierBFSearch::configure(nav2_costmap_2d::Costmap2D * costmap)
+void FrontierBFSearch::configure(std::shared_ptr<nav2_costmap_2d::Costmap2DROS> explore_costmap_ros, std::string name, std::shared_ptr<nav2_util::LifecycleNode> node)
 {
-  if (costmap == nullptr) {
+  if (explore_costmap_ros == nullptr) {
     throw std::runtime_error("Given input costmap is null");
   }
-  costmap_ = costmap;
-  
-  min_frontier_cluster_size_ = parameterInstance.getValue<double>(
-    "frontierSearch.min_frontier_cluster_size");
-  max_frontier_cluster_size_ = parameterInstance.getValue<double>(
-    "frontierSearch.max_frontier_cluster_size");
-  lethal_threshold_ = parameterInstance.getValue<int64_t>("frontierSearch.lethal_threshold");
+  costmap_ = explore_costmap_ros->getCostmap();
+
+  nav2_util::declare_parameter_if_not_declared(
+    node, name + ".min_frontier_cluster_size", rclcpp::ParameterValue(
+      1.0));
+  nav2_util::declare_parameter_if_not_declared(
+    node, name + ".max_frontier_cluster_size", rclcpp::ParameterValue(
+      20.0));
+  nav2_util::declare_parameter_if_not_declared(
+    node, name + ".lethal_threshold", rclcpp::ParameterValue(
+      160));
+
+  min_frontier_cluster_size_ = node->get_parameter(
+    name + ".min_frontier_cluster_size").as_double();
+  max_frontier_cluster_size_ = node->get_parameter(
+    name + ".max_frontier_cluster_size").as_double();
+  lethal_threshold_ = node->get_parameter(
+    name + ".lethal_threshold").as_int();
+
+  LOG_DEBUG("min_frontier_cluster_size: " << min_frontier_cluster_size_);
+  LOG_DEBUG("max_frontier_cluster_size: " << max_frontier_cluster_size_);
+  LOG_DEBUG("lethal_threshold: " << static_cast<int>(lethal_threshold_));
 }
 
 void FrontierBFSearch::reset()
 {
-  costmap_ = nullptr;
-  every_frontier_list.clear();
+  every_frontier_list_.clear();
 }
 
-FrontierSearchResult FrontierBFSearch::searchFrom(geometry_msgs::msg::Point position, std::vector<FrontierPtr> & output_frontier_list)
+FrontierSearchResult FrontierBFSearch::searchFrom(
+  geometry_msgs::msg::Point position,
+  std::vector<FrontierPtr> & output_frontier_list,
+  double max_frontier_search_distance)
 {
+  // Clear the accumulated frontier list from previous searches
+  every_frontier_list_.clear();
+
   //  frontier_list to store the detected frontiers.
   std::vector<FrontierPtr> frontier_list;
 
@@ -73,8 +93,8 @@ FrontierSearchResult FrontierBFSearch::searchFrom(geometry_msgs::msg::Point posi
   }
   visited_flag[bfs.front()] = true;
 
-  auto distance_to_check_ = frontier_search_distance_ +
-    (max_frontier_cluster_size_ * costmap_->getResolution() * 1.414);
+  auto distance_to_check_ = max_frontier_search_distance +
+    (max_frontier_cluster_size_ * costmap_->getResolution() * DIAGONAL_FACTOR);
   distance_to_check_ = std::pow(distance_to_check_, 2);
 
   while (rclcpp::ok() && !bfs.empty()) {
@@ -114,6 +134,16 @@ FrontierSearchResult FrontierBFSearch::searchFrom(geometry_msgs::msg::Point posi
     }
   }
   output_frontier_list = frontier_list;
+  
+  // Check for duplicates
+  if (findDuplicates(frontier_list).size() > 0) {
+    throw RoadmapExplorerException("Duplicate frontiers found.");
+  }
+  if (frontier_list.size() == 0) {
+    LOG_INFO("Search was true but no frontiers found.");
+    return FrontierSearchResult::NO_FRONTIERS_FOUND;
+  }
+
   return FrontierSearchResult::SUCCESSFUL_SEARCH;
 }
 
@@ -130,7 +160,7 @@ std::vector<FrontierPtr> FrontierBFSearch::buildNewFrontier(
   costmap_->indexToCells(initial_cell, ix, iy);
   double wix, wiy;
   costmap_->mapToWorld(ix, iy, wix, wiy);
-  every_frontier_list.push_back({wix, wiy});
+  every_frontier_list_.push_back({wix, wiy});
   frontier_cell_indices.push_back(std::make_pair(wix, wiy));
 
   // push initial gridcell onto queue
@@ -163,7 +193,7 @@ std::vector<FrontierPtr> FrontierBFSearch::buildNewFrontier(
         coord_val.push_back(wx);
         coord_val.push_back(wy);
 
-        every_frontier_list.push_back(coord_val);
+        every_frontier_list_.push_back(coord_val);
         frontier_cell_indices.push_back(std::make_pair(wx, wy));
 
         // update frontier size
@@ -175,17 +205,19 @@ std::vector<FrontierPtr> FrontierBFSearch::buildNewFrontier(
         if (currentFrontierSize > max_frontier_cluster_size_) {
           FrontierPtr output = std::make_shared<Frontier>();
           LOG_DEBUG("*************");
-          LOG_DEBUG("Getting centroid")
+          LOG_DEBUG("Getting centroid");
           auto cluster_centroid =
-            getCentroidOfCells(frontier_cell_indices, (costmap_->getResolution() * 1.414 * 2));
+            getCentroidOfCells(
+            frontier_cell_indices,
+            (costmap_->getResolution() * DIAGONAL_FACTOR * CENTROID_OFFSET_MULTIPLIER));
           SortByMedianFunctor sortFunctor(cluster_centroid);
           std::sort(frontier_cell_indices.begin(), frontier_cell_indices.end(), sortFunctor);
           auto goal_point =
             frontier_cell_indices[static_cast<int>(frontier_cell_indices.size() / 2)];
           output->setGoalPoint(goal_point.first, goal_point.second);
           output->setSize(currentFrontierSize);
-          LOG_DEBUG("Cluster size: " << frontier_cell_indices.size())
-          LOG_DEBUG("x, y goal: " << goal_point.first << " , " << goal_point.second)
+          LOG_DEBUG("Cluster size: " << frontier_cell_indices.size());
+          LOG_DEBUG("x, y goal: " << goal_point.first << " , " << goal_point.second);
           LOG_DEBUG("Cluster components: ");
           for (auto i : frontier_cell_indices) {
             LOG_DEBUG_N(
@@ -210,14 +242,16 @@ std::vector<FrontierPtr> FrontierBFSearch::buildNewFrontier(
   if (currentFrontierSize > min_frontier_cluster_size_) {
     FrontierPtr output = std::make_shared<Frontier>();
     auto cluster_centroid =
-      getCentroidOfCells(frontier_cell_indices, (costmap_->getResolution() * 1.414 * 2));
+      getCentroidOfCells(
+      frontier_cell_indices,
+      (costmap_->getResolution() * DIAGONAL_FACTOR * CENTROID_OFFSET_MULTIPLIER));
     SortByMedianFunctor sortFunctor(cluster_centroid);
     std::sort(frontier_cell_indices.begin(), frontier_cell_indices.end(), sortFunctor);
     auto goal_point = frontier_cell_indices[static_cast<int>(frontier_cell_indices.size() / 2)];
     output->setGoalPoint(goal_point.first, goal_point.second);
     output->setSize(currentFrontierSize);
-    LOG_DEBUG("Cluster size: " << frontier_cell_indices.size())
-    LOG_DEBUG("x, y goal: " << goal_point.first << " , " << goal_point.second)
+    LOG_DEBUG("Cluster size: " << frontier_cell_indices.size());
+    LOG_DEBUG("x, y goal: " << goal_point.first << " , " << goal_point.second);
     LOG_DEBUG("Cluster components: ");
     for (auto i : frontier_cell_indices) {
       LOG_DEBUG_N(
@@ -232,7 +266,7 @@ std::vector<FrontierPtr> FrontierBFSearch::buildNewFrontier(
     LOG_TRACE(
       "2Initial Point: (" << output->getGoalPoint().x << ", " << output->getGoalPoint().y << ", " << output->getGoalPoint().z <<
         ")");
-    LOG_TRACE("2*************====================")
+    LOG_TRACE("2*************====================");
     calculated_frontiers.push_back(output);
   }
   return calculated_frontiers;
@@ -270,7 +304,70 @@ bool FrontierBFSearch::isNewFrontierCell(unsigned int idx, const std::vector<boo
 
 std::vector<std::vector<double>> FrontierBFSearch::getAllFrontiers()
 {
-  return every_frontier_list;
+  return every_frontier_list_;
+}
+
+std::pair<double, double> FrontierBFSearch::getCentroidOfCells(
+  std::vector<std::pair<double, double>> & cells,
+  double distance_to_offset)
+{
+  double sumX = 0;
+  double sumY = 0;
+
+  for (const auto & point : cells) {
+    sumX += point.first;
+    sumY += point.second;
+  }
+
+  double centerX = static_cast<double>(sumX) / cells.size();
+  double centerY = static_cast<double>(sumY) / cells.size();
+
+  bool offset_centroid = false;
+  double varX = 0, varY = 0;
+  for (const auto & point : cells) {
+    if (sqrt(
+        pow(
+          point.first - centerX,
+          2) + pow(point.second - centerY, 2)) < costmap_->getResolution() * 3)
+    {
+      offset_centroid = true;
+    }
+    varX += abs(point.first - centerX);
+    varY += abs(point.second - centerY);
+  }
+  LOG_DEBUG("Centroid before: " << centerX << " , " << centerY);
+  LOG_DEBUG("VarX: " << varX);
+  LOG_DEBUG("VarY: " << varY);
+
+  if (varX > varY && offset_centroid) {
+    centerY -= distance_to_offset;
+  }
+  if (varX < varY && offset_centroid) {
+    centerX -= distance_to_offset;
+  }
+
+  LOG_DEBUG("Centroid: " << centerX << " , " << centerY);
+
+  return std::make_pair(centerX, centerY);
+}
+
+std::vector<FrontierPtr> FrontierBFSearch::findDuplicates(const std::vector<FrontierPtr> & vec)
+{
+  std::vector<FrontierPtr> duplicates;
+
+  // Iterate through the vector
+  for (size_t i = 0; i < vec.size(); ++i) {
+    // Compare the current element with all subsequent elements
+    for (size_t j = i + 1; j < vec.size(); ++j) {
+      if (vec[i] == vec[j]) {
+        // If a duplicate is found, add it to the duplicates vector
+        duplicates.push_back(vec[i]);
+        break;             // Break the inner loop to avoid adding the same duplicate multiple times
+      }
+    }
+  }
+
+  return duplicates;
 }
 
 }

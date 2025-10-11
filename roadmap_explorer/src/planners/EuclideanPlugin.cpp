@@ -2,12 +2,17 @@
 
 namespace roadmap_explorer
 {
-void EuclideanDistancePlugin::configure(
-  std::shared_ptr<nav2_costmap_2d::Costmap2DROS> explore_costmap_ros)
+void EuclideanDistancePlugin::configure(std::shared_ptr<nav2_costmap_2d::Costmap2DROS> explore_costmap_ros, std::string name, std::shared_ptr<nav2_util::LifecycleNode> node)
 {
   LOG_INFO("EuclideanDistancePlugin::configure");
   exploration_costmap_ = explore_costmap_ros->getCostmap();
-  updateParameters();
+
+  nav2_util::declare_parameter_if_not_declared(
+    node, name + "closeness_rejection_threshold", rclcpp::ParameterValue(
+      0.5));
+  
+  closeness_rejection_threshold_ = node->get_parameter(
+    name + "closeness_rejection_threshold").as_double();
 }
 
 void EuclideanDistancePlugin::reset()
