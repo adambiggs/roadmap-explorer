@@ -92,19 +92,6 @@ void ParameterHandler::makeParameters(std::shared_ptr<nav2_util::LifecycleNode> 
   parameter_map_["fullPathOptimizer.add_distance_to_robot_to_tsp"] = node->get_parameter(
     "fullPathOptimizer.add_distance_to_robot_to_tsp").as_bool();
 
-  // --- goalHysteresis ---
-  nav2_util::declare_parameter_if_not_declared(
-    node, "goalHysteresis.use_euclidean_distance", rclcpp::ParameterValue(
-      false));
-  nav2_util::declare_parameter_if_not_declared(
-    node, "goalHysteresis.use_roadmap_planner_distance", rclcpp::ParameterValue(
-      true));
-
-  parameter_map_["goalHysteresis.use_euclidean_distance"] = node->get_parameter(
-    "goalHysteresis.use_euclidean_distance").as_bool();
-  parameter_map_["goalHysteresis.use_roadmap_planner_distance"] = node->get_parameter(
-    "goalHysteresis.use_roadmap_planner_distance").as_bool();
-
   // --- explorationBT ---
   nav2_util::declare_parameter_if_not_declared(
     node, "explorationBT.bt_sleep_ms", rclcpp::ParameterValue(
@@ -189,17 +176,7 @@ void ParameterHandler::makeParameters(std::shared_ptr<nav2_util::LifecycleNode> 
 
 void ParameterHandler::sanityCheckParameters()
 {
-  if (getValue<bool>("goalHysteresis.use_euclidean_distance") == true &&
-    getValue<bool>("goalHysteresis.use_roadmap_planner_distance") == true)
-  {
-    throw RoadmapExplorerException(
-            "Both use_euclidean_distance and use_roadmap_planner_distance are set to true. Please set only one of them to true.");
-  } else if (getValue<bool>("goalHysteresis.use_euclidean_distance") == false &&
-    getValue<bool>("goalHysteresis.use_roadmap_planner_distance") == false)
-  {
-    throw RoadmapExplorerException(
-            "Both use_euclidean_distance and use_roadmap_planner_distance are set to false. Please set only one of them to true.");
-  }
+  // currently there are no sanity checks
 }
 
 rcl_interfaces::msg::SetParametersResult ParameterHandler::dynamicReconfigureCallback(
