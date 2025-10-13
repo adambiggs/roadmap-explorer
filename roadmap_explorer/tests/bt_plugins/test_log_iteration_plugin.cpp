@@ -233,7 +233,13 @@ TEST_F(LogIterationPluginTest, DifferentNodeNames)
   
   // Test tree execution
   size_t initial_count = EventLoggerInstance.getPlanningCount();
+#ifdef ROS_DISTRO_HUMBLE
   BT::NodeStatus status = tree.tickRoot();
+#elif ROS_DISTRO_JAZZY || ROS_DISTRO_KILTED
+  BT::NodeStatus status = tree.tickOnce();
+#else
+  #error "Unsupported ROS distro"
+#endif
   
   EXPECT_EQ(status, BT::NodeStatus::SUCCESS);
   // Should have executed both nodes, so count should increase by 2
@@ -316,7 +322,8 @@ TEST_F(LogIterationPluginTest, BasicThreadSafety)
   context_ = createContext();
   plugin_->registerNodes(*factory_, context_);
   
-  // Create a simple behavior tree XML with multiple LogIterationBT nodes
+#ifdef ROS_DISTRO_HUMBLE
+  // For Humble (BT.CPP 3.x): Use Parallel node
   std::string bt_xml = R"(
     <root BTCPP_format="4">
       <BehaviorTree ID="ThreadSafetyTest">
@@ -327,6 +334,22 @@ TEST_F(LogIterationPluginTest, BasicThreadSafety)
       </BehaviorTree>
     </root>
   )";
+#elif ROS_DISTRO_JAZZY || ROS_DISTRO_KILTED
+  // For Jazzy/Kilted (BT.CPP 4.x): Use Sequence instead
+  // Parallel nodes behave differently with tickOnce() in BT.CPP 4.x
+  std::string bt_xml = R"(
+    <root BTCPP_format="4">
+      <BehaviorTree ID="ThreadSafetyTest">
+        <Sequence>
+          <LogIterationBT name="thread_test_1" />
+          <LogIterationBT name="thread_test_2" />
+        </Sequence>
+      </BehaviorTree>
+    </root>
+  )";
+#else
+  #error "Unsupported ROS distro"
+#endif
   
   // Create blackboard
   auto blackboard = BT::Blackboard::create();
@@ -339,7 +362,13 @@ TEST_F(LogIterationPluginTest, BasicThreadSafety)
   size_t initial_count = EventLoggerInstance.getPlanningCount();
   
   // Execute the tree (which runs both nodes in parallel)
+#ifdef ROS_DISTRO_HUMBLE
   BT::NodeStatus status = tree.tickRoot();
+#elif ROS_DISTRO_JAZZY || ROS_DISTRO_KILTED
+  BT::NodeStatus status = tree.tickOnce();
+#else
+  #error "Unsupported ROS distro"
+#endif
   
   EXPECT_EQ(status, BT::NodeStatus::SUCCESS);
   
