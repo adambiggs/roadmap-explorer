@@ -1,3 +1,24 @@
+/**
+    Copyright 2025 Suchetan Saravanan.
+
+    Licensed to the Apache Software Foundation (ASF) under one
+    or more contributor license agreements.  See the NOTICE file
+    distributed with this work for additional information
+    regarding copyright ownership.  The ASF licenses this file
+    to you under the Apache License, Version 2.0 (the
+    "License"); you may not use this file except in compliance
+    with the License.  You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing,
+    software distributed under the License is distributed on an
+    "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+    KIND, either express or implied.  See the License for the
+    specific language governing permissions and limitations
+    under the License.
+*/
+
 #include <roadmap_explorer/ExplorationBT.hpp>
 
 namespace roadmap_explorer
@@ -318,4 +339,53 @@ void RoadmapExplorationBT::halt()
   // }
 }
 
+bool RoadmapExplorationBT::saveExplorationMetaData(const std::string& session_name, const std::string& base_path)
+{
+  LOG_INFO("Saving exploration metadata for session: " << session_name);
+  LOG_INFO("Base path: " << base_path);
+
+  if (sensor_simulator_ == nullptr)
+  {
+    LOG_ERROR("Cannot save map: sensor_simulator is not initialized");
+    LOG_ERROR("Set localisation_only_mode to true to enable sensor simulator");
+    return false;
+  }
+
+  bool result = sensor_simulator_->saveMap(session_name, base_path);
+  
+  if (result) {
+    LOG_INFO("Map saved successfully");
+  } else {
+    LOG_ERROR("Failed to save map");
+  }
+
+  frontierRoadmapInstance.saveRoadmapData(base_path, session_name);
+
+  return result;
+}
+
+bool RoadmapExplorationBT::loadExplorationMetaData(const std::string& session_name, const std::string& base_path)
+{
+  LOG_INFO("Loading exploration metadata for session: " << session_name);
+  LOG_INFO("Base path: " << base_path);
+
+  if (sensor_simulator_ == nullptr)
+  {
+    LOG_ERROR("Cannot load map: sensor_simulator is not initialized");
+    LOG_ERROR("Set localisation_only_mode to true to enable sensor simulator");
+    return false;
+  }
+
+  auto result = sensor_simulator_->loadMap(session_name, base_path);
+  
+  if (result) {
+    LOG_INFO("Map loaded successfully");
+  } else {
+    LOG_ERROR("Failed to load map");
+  }
+
+  frontierRoadmapInstance.loadRoadmapData(base_path, session_name);
+
+  return result;
+}
 }
