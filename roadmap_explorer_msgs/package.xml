@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <package format="3">
   <name>roadmap_explorer_msgs</name>
-  <version>1.0.0</version>
+  <version>0.2.0</version>
   <description>A package that has the ROS 2 interfaces for running roadmap-explorer</description>
 
   <maintainer email="rssuchetan@gmail.com">Suchetan Saravanan</maintainer>
