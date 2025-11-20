@@ -19,6 +19,8 @@
     under the License.
 */
 
+#include <algorithm>
+
 #include "roadmap_explorer/Helpers.hpp"
 
 namespace roadmap_explorer
@@ -52,6 +54,19 @@ bool getTracedCells(
   double sx, double sy, double wx, double wy, RayTracedCells & cell_gatherer, double max_length,
   nav2_costmap_2d::Costmap2D * exploration_costmap_)
 {
+  const double min_x = exploration_costmap_->getOriginX();
+  const double min_y = exploration_costmap_->getOriginY();
+  const double max_x = min_x + exploration_costmap_->getSizeInMetersX();
+  const double max_y = min_y + exploration_costmap_->getSizeInMetersY();
+  const double epsilon = exploration_costmap_->getResolution();
+  auto clamp_to_bounds = [&](double & wx_ref, double & wy_ref) {
+    wx_ref = std::clamp(wx_ref, min_x + epsilon, max_x - epsilon);
+    wy_ref = std::clamp(wy_ref, min_y + epsilon, max_y - epsilon);
+  };
+
+  clamp_to_bounds(wx, wy);
+  clamp_to_bounds(sx, sy);
+
   unsigned int min_length = 0.0;
   int resolution_cut_factor = 1;
   // Calculate map coordinates
