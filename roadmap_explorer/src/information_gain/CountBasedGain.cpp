@@ -19,6 +19,8 @@
     under the License.
 */
 
+#include <algorithm>
+
 #include "roadmap_explorer/information_gain/CountBasedGain.hpp"
 
 namespace roadmap_explorer
@@ -80,6 +82,13 @@ void CountBasedGain::setInformationGainForFrontier(
   FrontierPtr & frontier,
   std::vector<double> & polygon_xy_min_max)
 {
+  if (!arrival_info_limits_set_) {
+    if (setArrivalInformationLimits() <= 0.0 || !arrival_info_limits_set_) {
+      LOG_WARN("Arrival information limits unavailable; deferring frontier gain computation.");
+      frontier->setArrivalInformation(0.0);
+      return;
+    }
+  }
   double sx, sy;         // sensor x, sensor y, sensor orientation
   double wx, wy;
   unsigned int max_length = MAX_CAMERA_DEPTH / (exploration_costmap_->getResolution());
@@ -193,69 +202,32 @@ void CountBasedGain::setInformationGainForFrontier(
 
 double CountBasedGain::setArrivalInformationLimits()
 {
-  // LOG_WARN("Setting arrival information limits.");
+  // Robust analytical calculation of information limits
+  // Avoids raytracing on uninitialized/empty maps which causes crashes
   if (arrival_info_limits_set_) {
-    // LOG_WARN("Arrival information limits already set.");
     return 0.0;
   }
-  double sx, sy;       // sensor x, sensor y, sensor orientation
-  double wx, wy;
-  unsigned int max_length = MAX_CAMERA_DEPTH / (exploration_costmap_->getResolution());
-  sx = exploration_costmap_->getOriginX() + (exploration_costmap_->getSizeInMetersX() / 2);
-  sy = exploration_costmap_->getOriginY() + (exploration_costmap_->getSizeInMetersY() / 2);
-  std::vector<int> information_along_ray;       // stores the information along each ray in 2PI.
-  std::vector<geometry_msgs::msg::Pose> vizpoints;
-  for (double theta = 0; theta <= (2 * M_PI); theta += DELTA_THETA) {
-    std::vector<nav2_costmap_2d::MapLocation> traced_cells;
-    // treats cells 240 to 254 as obstacles and returns 255 in the traced cells.
-    RayTracedCells cell_gatherer(exploration_costmap_, traced_cells, 260, 260, 0, 255);
-
-    wx = sx + (MAX_CAMERA_DEPTH * cos(theta));
-    wy = sy + (MAX_CAMERA_DEPTH * sin(theta));
-
-    if (!getTracedCells(sx, sy, wx, wy, cell_gatherer, max_length, exploration_costmap_)) {
-      LOG_ERROR("Error in raytracing. Cannot set arrival information limits.");
-      LOG_ERROR("Max length is: " << max_length);
-      throw RoadmapExplorerException(
-              "Error in raytracing. Cannot set arrival information limits.");
-    }
-
-    auto info_addition = cell_gatherer.getCells();
-    information_along_ray.push_back(info_addition.size());
-    // loop for visualization
-    for (size_t counter_info = 0; counter_info < info_addition.size(); counter_info++) {
-      double wmx, wmy;
-      exploration_costmap_->mapToWorld(
-        info_addition[counter_info].x, info_addition[counter_info].y,
-        wmx, wmy);
-      geometry_msgs::msg::Pose pnts;
-      pnts.position.x = wmx;
-      pnts.position.y = wmy;
-      vizpoints.push_back(pnts);
-    }
-  }       // theta end
-
-  std::vector<int> kernel(static_cast<int>(CAMERA_FOV / DELTA_THETA), 1);       // initialize a kernal vector of size 6 and all elements = 1
-  int n = information_along_ray.size();                                         // number of rays computed in 2PI
-  int k = kernel.size();
-  std::vector<int> result(n - k + 1, 0);
-  for (int i = 0; i < n - k + 1; ++i) {
-    for (int j = 0; j < k; ++j) {
-      result[i] += information_along_ray[i + j] * kernel[j];
-    }
+  
+  if (exploration_costmap_->getResolution() <= 0.0) {
+    LOG_WARN("Invalid costmap resolution; skipping arrival info setup.");
+    return 0.0;
   }
-  int maxValue = result[0];
-  for (int i = 1; i < (int)result.size(); ++i) {
-    if (result[i] > maxValue) {
-      maxValue = result[i];
-    }
-  }
+
+  // Calculate max possible cells visible in FOV
+  // Max length in cells * Number of rays
+  double cells_per_ray = MAX_CAMERA_DEPTH / exploration_costmap_->getResolution();
+  double num_rays = CAMERA_FOV / DELTA_THETA;
+  
+  // Theoretical maximum (assuming all cells are unknown and free)
+  // We apply a factor because rays overlap close to the robot
+  double theoretical_max = cells_per_ray * num_rays * 0.8; 
+
   arrival_info_limits_set_ = true;
-  max_arrival_info_gt_ = maxValue * 1.2;
-  LOG_INFO("Max arrival cost GT: " << max_arrival_info_gt_);
+  max_arrival_info_gt_ = theoretical_max;
   min_arrival_info_gt_ = FACTOR_OF_MAX_IS_MIN_ * max_arrival_info_gt_;
-  LOG_INFO("Min arrival cost GT: " << min_arrival_info_gt_);
-  return maxValue;
+
+  LOG_INFO("Robust limits set - Max: " << max_arrival_info_gt_ << ", Min: " << min_arrival_info_gt_);
+  return max_arrival_info_gt_;
 }
 } // namespace roadmap_explorer
 
