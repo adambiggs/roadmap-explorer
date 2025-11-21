@@ -95,6 +95,8 @@ void ThetaStar::linearInterpolation(
   const double & dist_bw_points, nav_msgs::msg::Path & path)
 {
   geometry_msgs::msg::PoseStamped p1;
+  p1.header = path.header;
+  p1.pose.orientation.w = 1.0;
   for (unsigned int j = 0; j < raw_path.size() - 1; j++) {
     coordsW pt1 = raw_path[j];
     p1.pose.position.x = pt1.x;

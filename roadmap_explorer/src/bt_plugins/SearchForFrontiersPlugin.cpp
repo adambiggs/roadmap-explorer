@@ -25,6 +25,7 @@
 
 #include <pluginlib/class_list_macros.hpp>
 #include <geometry_msgs/msg/polygon_stamped.hpp>
+#include <std_msgs/msg/int32.hpp>
 
 namespace roadmap_explorer
 {
@@ -41,6 +42,11 @@ namespace roadmap_explorer
         explore_costmap_ros_ = explore_costmap_ros;
         frontierSearchPtr_ = frontierSearchPtr;
         ros_node_ptr_ = ros_node_ptr;
+        
+        frontier_count_pub_ = ros_node_ptr_->create_publisher<std_msgs::msg::Int32>(
+            "roadmap_explorer/frontiers_count", 10);
+        frontier_count_pub_->on_activate();
+            
         LOG_DEBUG("SearchForFrontiersBT Constructor");
     }
 
@@ -59,6 +65,14 @@ namespace roadmap_explorer
         auto current_frontier_search_distance = config().blackboard->get<double>("current_frontier_search_distance");
         LOG_INFO("Current frontier search distance: " << current_frontier_search_distance);
         auto searchResult = frontierSearchPtr_->searchFrom(robotP.pose.position, frontier_list, current_frontier_search_distance);
+        
+        // Publish frontier count
+        std_msgs::msg::Int32 count_msg;
+        count_msg.data = frontier_list.size();
+        if (frontier_count_pub_->is_activated()) {
+            frontier_count_pub_->publish(count_msg);
+        }
+
         if (searchResult != FrontierSearchResult::SUCCESSFUL_SEARCH)
         {
             LOG_INFO("No frontiers in current search radius.")
@@ -93,6 +107,7 @@ namespace roadmap_explorer
     std::shared_ptr<FrontierSearchBase> frontierSearchPtr_;
     std::shared_ptr<nav2_costmap_2d::Costmap2DROS> explore_costmap_ros_;
     std::shared_ptr<nav2_util::LifecycleNode> ros_node_ptr_;
+    rclcpp_lifecycle::LifecyclePublisher<std_msgs::msg::Int32>::SharedPtr frontier_count_pub_;
     double original_search_distance_;
     double increment_value_;
     double current_search_distance_;

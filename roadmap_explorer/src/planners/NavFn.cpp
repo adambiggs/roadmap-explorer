@@ -98,6 +98,8 @@ bool computePathBetweenPoints(
     double world_x, world_y;
     exploration_costmap_->mapToWorld(path_x[i], path_y[i], world_x, world_y);
     geometry_msgs::msg::PoseStamped pose;
+    pose.header = path.header;
+    pose.pose.orientation.w = 1.0;
     pose.pose.position.x = world_x;
     pose.pose.position.y = world_y;
     pose.pose.position.z = 0.0;
