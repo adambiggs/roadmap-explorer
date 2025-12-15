@@ -151,6 +151,7 @@ src/bt_plugins/ProcessFrontierCostsPlugin.cpp
 src/bt_plugins/OptimizeFullPathPlugin.cpp
 src/bt_plugins/SendNav2GoalPlugin.cpp
 src/bt_plugins/BlacklistGoalPlugin.cpp
+src/bt_plugins/BootstrapRandomWalkPlugin.cpp
 )
 ament_target_dependencies(${PROJECT_NAME}_bt_plugins ${dependencies})
 target_link_libraries(${PROJECT_NAME}_bt_plugins 
