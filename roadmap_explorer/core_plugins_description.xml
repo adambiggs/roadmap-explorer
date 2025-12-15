@@ -70,4 +70,12 @@
       Base class for all exploration BT plugins.
     </description>
   </class>
+
+  <class name="roadmap_explorer::BootstrapRandomWalkPlugin"
+         type="roadmap_explorer::BootstrapRandomWalkPlugin"
+         base_class_type="roadmap_explorer::BTPlugin">
+    <description>
+      BT node for bootstrap random walk when map is too empty.
+    </description>
+  </class>
 </library>
