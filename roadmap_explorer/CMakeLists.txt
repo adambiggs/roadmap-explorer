@@ -115,6 +115,7 @@ src/planners/ThetaStar.cpp
 src/planners/Astar.cpp
 src/planners/NavFn.cpp
 src/planners/NavFnPlugin.cpp
+src/planners/OneTurnSearch.cpp
 src/planners/FrontierRoadmap.cpp
 src/planners/FrontierRoadmapPlugin.cpp
 src/planners/EuclideanPlugin.cpp

@@ -22,6 +22,7 @@
 #ifndef BASE_PLANNER_HPP_
 #define BASE_PLANNER_HPP_
 
+#include <functional>
 #include <memory>
 #include <limits>
 
@@ -87,6 +88,14 @@ protected:
   bool planner_allow_unknown_ = false;
 };
 
+
+class BatchFrontierPlanner
+{
+public:
+  virtual ~BatchFrontierPlanner() = default;
+  virtual bool setPlansForFrontiers(const geometry_msgs::msg::Pose & start,
+    std::vector<FrontierPtr> & frontiers, const std::function<bool()> & canceled) = 0;
+};
 }  // namespace roadmap_explorer
 
 #endif  // BASE_PLANNER_HPP_

@@ -105,11 +105,14 @@ public:
   void updateBoundaryPolygon(geometry_msgs::msg::PolygonStamped & explore_boundary);
 
   bool populateFrontierCosts(std::shared_ptr<CalculateFrontierCostsRequest> requestData);
+  bool populateFrontierCosts(std::shared_ptr<CalculateFrontierCostsRequest> requestData,
+    const std::function<bool()> & canceled, bool & used_one_turn);
 
 private:
 
   bool assignCosts(
-    std::vector<FrontierPtr> & frontier_list, geometry_msgs::msg::Pose start_pose_w);
+    std::vector<FrontierPtr> & frontier_list, geometry_msgs::msg::Pose start_pose_w,
+    const std::function<bool()> & canceled, bool & used_one_turn);
 
   void setFrontierBlacklist(std::vector<FrontierPtr> & blacklist);
 
@@ -117,8 +120,7 @@ private:
 
   void initializePlugins();
 
-  void processFrontier(FrontierPtr & frontier,
-    const geometry_msgs::msg::Pose & start_pose_w);
+  bool prepareFrontier(FrontierPtr & frontier);
 
   void setFrontierUnachievable(FrontierPtr & frontier);
   

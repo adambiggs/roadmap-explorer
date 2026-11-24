@@ -74,8 +74,12 @@ namespace roadmap_explorer
         throw RoadmapExplorerException("Failed to retrieve latest_robot_pose from blackboard.");
         }
         LOG_INFO("Request to get frontier costs sent");
+        std::function<bool()> canceled = [] {return false;};
+        config().blackboard->get("exploration_canceled", canceled);
+        bool used_one_turn = false;
         bool frontierCostsSuccess = cost_assigner_ptr_->populateFrontierCosts(
-        frontierCostsRequestPtr);
+        frontierCostsRequestPtr, canceled, used_one_turn);
+        config().blackboard->set("one_turn_recovery", used_one_turn);
         if (frontierCostsSuccess == false) {
         LOG_INFO("Failed to receive response for getNextFrontier called from within the robot.");
         EventLoggerInstance.endEvent("ProcessFrontierCosts", 0);

@@ -44,6 +44,10 @@ namespace roadmap_explorer
 
     BT::NodeStatus onStart() override
     {
+        std::function<bool()> canceled;
+        if (config().blackboard->get("exploration_canceled", canceled) && canceled()) {
+          return BT::NodeStatus::RUNNING;
+        }
         LOG_FLOW("SendNav2Goal onStart");
         FrontierPtr allocatedFrontier = std::make_shared<Frontier>();
         getInput("allocated_frontier", allocatedFrontier);
@@ -71,6 +75,10 @@ namespace roadmap_explorer
 
     BT::NodeStatus onRunning()
     {
+        std::function<bool()> canceled;
+        if (config().blackboard->get("exploration_canceled", canceled) && canceled()) {
+          return BT::NodeStatus::RUNNING;
+        }
         LOG_DEBUG("SendNav2Goal onRunning");
         FrontierPtr allocatedFrontier = std::make_shared<Frontier>();
         getInput("allocated_frontier", allocatedFrontier);

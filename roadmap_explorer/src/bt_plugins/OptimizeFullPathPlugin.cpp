@@ -64,8 +64,10 @@ namespace roadmap_explorer
         throw RoadmapExplorerException("Failed to retrieve latest_robot_pose from blackboard.");
         }
         FrontierPtr allocatedFrontier = std::make_shared<Frontier>();
+        bool used_one_turn = false;
+        config().blackboard->get("one_turn_recovery", used_one_turn);
         auto return_state = full_path_optimizer_->getNextGoal(
-        globalFrontierList, allocatedFrontier, robotP);
+        globalFrontierList, allocatedFrontier, robotP, used_one_turn);
         if (return_state) {
         setOutput<FrontierPtr>("allocated_frontier", allocatedFrontier);
         } else {

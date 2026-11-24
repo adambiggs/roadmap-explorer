@@ -92,12 +92,19 @@ CostAssigner::~CostAssigner()
 bool CostAssigner::populateFrontierCosts(
   std::shared_ptr<CalculateFrontierCostsRequest> requestData)
 {
+  bool used_one_turn = false;
+  return populateFrontierCosts(requestData, [] {return false;}, used_one_turn);
+}
+
+bool CostAssigner::populateFrontierCosts(
+  std::shared_ptr<CalculateFrontierCostsRequest> requestData, const std::function<bool()> & canceled, bool & used_one_turn)
+{
   // set the blacklist
   setFrontierBlacklist(requestData->prohibited_frontiers);
   rosVisualizerInstance.visualizeBlacklistedFrontierMarkers("blacklisted_frontiers", requestData->prohibited_frontiers);
 
   // process the chosen approach
-  return assignCosts(requestData->frontier_list, requestData->start_pose.pose);
+  return assignCosts(requestData->frontier_list, requestData->start_pose.pose, canceled, used_one_turn);
 }
 
 void CostAssigner::updateBoundaryPolygon(geometry_msgs::msg::PolygonStamped & explore_boundary)
@@ -150,7 +157,7 @@ void CostAssigner::updateBoundaryPolygon(geometry_msgs::msg::PolygonStamped & ex
 
 bool CostAssigner::assignCosts(
   std::vector<FrontierPtr> & frontier_list,
-  geometry_msgs::msg::Pose start_pose_w)
+  geometry_msgs::msg::Pose start_pose_w, const std::function<bool()> & canceled, bool & used_one_turn)
 {
   min_traversable_distance = std::numeric_limits<double>::max();
   max_traversable_distance = -1.0 * std::numeric_limits<double>::max();
@@ -173,10 +180,26 @@ bool CostAssigner::assignCosts(
   // Process each frontier
   LOG_DEBUG("FrontierPtr list size is (loop): " + std::to_string(frontier_list.size()));
   
+  auto * batch = dynamic_cast<BatchFrontierPlanner *>(planner_plugin_.get());
+  std::vector<FrontierPtr> admitted;
   for (auto & frontier : frontier_list) {
-    processFrontier(frontier, start_pose_w);
+    if (prepareFrontier(frontier)) {
+      if (batch) {
+        admitted.push_back(frontier);
+      } else {
+        if (planner_plugin_) {
+          planner_plugin_->setPlanForFrontier(start_pose_w, frontier);
+        }
+        recomputeNormalizationFactors(frontier);
+      }
+    }
   }
-
+  if (batch) {
+    used_one_turn = batch->setPlansForFrontiers(start_pose_w, admitted, canceled);
+    for (auto & frontier : admitted) {
+      recomputeNormalizationFactors(frontier);
+    }
+  }
   return true;
 }
 
@@ -231,13 +254,11 @@ void CostAssigner::initializePlugins()
   }
 }
 
-void CostAssigner::processFrontier(FrontierPtr & frontier,
-  const geometry_msgs::msg::Pose & start_pose_w)
+bool CostAssigner::prepareFrontier(FrontierPtr & frontier)
 {
-  // Check if frontier is blacklisted
   if (frontier_blacklist_.count(frontier) > 0) {
     setFrontierUnachievable(frontier);
-    return;
+    return false;
   }
 
   // Check if frontier is outside polygon
@@ -248,7 +269,7 @@ void CostAssigner::processFrontier(FrontierPtr & frontier,
       goal_point.y > polygon_xy_min_max_[3]) {
     LOG_DEBUG("Frontier is outside of the polygon, skipping.");
     setFrontierUnachievable(frontier);
-    return;
+    return false;
   }
 
   // Process information gain if needed
@@ -256,12 +277,7 @@ void CostAssigner::processFrontier(FrontierPtr & frontier,
     information_gain_plugin_->setInformationGainForFrontier(frontier, polygon_xy_min_max_);
   }
 
-  // Process planning if needed
-  if (planner_plugin_) {
-    planner_plugin_->setPlanForFrontier(start_pose_w, frontier);
-  }
-
-  recomputeNormalizationFactors(frontier);
+  return true;
 }
 
 void CostAssigner::recomputeNormalizationFactors(FrontierPtr & frontier)

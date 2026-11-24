@@ -31,7 +31,7 @@
 namespace roadmap_explorer
 {
 
-class PluginFrontierRoadmap : public BasePlanner
+class PluginFrontierRoadmap : public BasePlanner, public BatchFrontierPlanner
 {
 public:
   PluginFrontierRoadmap() = default;
@@ -47,7 +47,13 @@ public:
     const geometry_msgs::msg::Pose start_pose_w,
     FrontierPtr & goal_point_w) override;
 
+  bool setPlansForFrontiers(const geometry_msgs::msg::Pose & start,
+    std::vector<FrontierPtr> & frontiers, const std::function<bool()> & canceled) override;
+
 private:
+  void scoreFrontier(const geometry_msgs::msg::Pose & start, FrontierPtr & frontier,
+    std::pair<FrontierPtr, FrontierPtr> * disconnected);
+
   nav2_costmap_2d::Costmap2D * exploration_costmap_ = nullptr;
 };
 

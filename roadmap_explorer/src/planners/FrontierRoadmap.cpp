@@ -600,8 +600,16 @@ void FrontierRoadMap::getClosestNodeInRoadMap(
 }
 
 RoadmapPlanResult FrontierRoadMap::getPlan(
+  double xs, double ys, bool useClosestToStart, double xe, double ye,
+  bool useClosestToEnd, bool publish_plan)
+{
+  return getPlan(xs, ys, useClosestToStart, xe, ye, useClosestToEnd, publish_plan, nullptr);
+}
+
+RoadmapPlanResult FrontierRoadMap::getPlan(
   double xs, double ys, bool useClosestToStart, double xe,
-  double ye, bool useClosestToEnd, bool publish_plan)
+  double ye, bool useClosestToEnd, bool publish_plan,
+    std::pair<FrontierPtr, FrontierPtr> * disconnected)
 {
   RoadmapPlanResult planResult;
   if (xs == xe && ys == ye) {
@@ -658,6 +666,9 @@ RoadmapPlanResult FrontierRoadMap::getPlan(
   if (planResult.path.size() == 0) {
     LOG_WARN("Could not compute path from: " << xs << ", " << ys << " to " << xe << ", " << ye);
     planResult.path_exists = false;
+    if (disconnected) {
+      *disconnected = {start_closest, goal_closest};
+    }
     roadmap_mutex_.unlock();
     return planResult;
   }

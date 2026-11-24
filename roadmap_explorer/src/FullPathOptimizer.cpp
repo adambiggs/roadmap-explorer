@@ -242,7 +242,7 @@ void FullPathOptimizer::getFilteredFrontiersN(
 bool FullPathOptimizer::getBestFullPath(
   SortedFrontiers & sortedFrontiers,
   std::vector<FrontierPtr> & bestFrontierWaypoint,
-  geometry_msgs::msg::PoseStamped & robotP)
+  geometry_msgs::msg::PoseStamped & robotP, bool used_one_turn)
 {
   std::vector<std::vector<FrontierPtr>> bestPaths;
   // Create a MarkerArray
@@ -281,6 +281,28 @@ bool FullPathOptimizer::getBestFullPath(
   LOG_DEBUG("************************");
   LOG_DEBUG("************************");
   LOG_DEBUG("************************");
+  // Recovered legs are valid for this costmap snapshot only. A pair with no
+  // ordinary graph route can travel its two validated legs via the robot.
+  std::map<FrontierPair, double> recovered_pairs;
+  const auto tourLength = [&](std::vector<FrontierPtr> & tour) {
+    if (!used_one_turn) {
+      return calculatePathLength(tour);
+    }
+    double length = tour[1]->getPathLengthInM();
+    for (size_t i = 1; i + 1 < tour.size(); ++i) {
+      auto & a = tour[i];
+      auto & b = tour[i + 1];
+      auto [it, inserted] = recovered_pairs.try_emplace(FrontierPair(a, b), 0.0);
+      if (inserted) {
+        auto direct = frontierRoadmapInstance.getPlan(a, true, b, true);
+        it->second = direct.path_exists ? direct.path_length_m :
+          a->getPathLengthInM() + b->getPathLengthInM();
+        recovered_pairs[FrontierPair(b, a)] = it->second;
+      }
+      length += it->second;
+    }
+    return length;
+  };
   do{
     sortedFrontiers.local_frontiers.insert(
       sortedFrontiers.local_frontiers.begin(), robotPoseFrontier);
@@ -291,7 +313,7 @@ bool FullPathOptimizer::getBestFullPath(
     // sortedFrontiers.local_frontiers.push_back(robotPoseFrontier);
     LOG_DEBUG("Computing paths for permutation: " << sortedFrontiers.local_frontiers);
 
-    double currentLength = calculatePathLength(sortedFrontiers.local_frontiers);
+    double currentLength = tourLength(sortedFrontiers.local_frontiers);
 
     if (add_yaw_to_tsp) {
       auto robot_yaw = quatToEuler(robotP.pose.orientation)[2];
@@ -355,7 +377,7 @@ bool FullPathOptimizer::getBestFullPath(
   // this is useful if there are more than one paths with the same length.
   for (const auto & path : bestPaths) {
     LOG_DEBUG("Getting distance with local frontiers: " << path);
-    auto distance_to_get_minima = calculateLengthRobotToGoal(robotPoseFrontier, path[1]);
+    auto distance_to_get_minima = used_one_turn ? path[1]->getPathLengthInM() : calculateLengthRobotToGoal(robotPoseFrontier, path[1]);
     LOG_DEBUG("Distance is: " << distance_to_get_minima);
     if (distance_to_get_minima < minLength) {
       minLength = distance_to_get_minima;
@@ -369,6 +391,14 @@ bool FullPathOptimizer::getNextGoal(
   std::vector<FrontierPtr> & frontier_list,
   FrontierPtr & nextFrontier,
   geometry_msgs::msg::PoseStamped & robotP)
+{
+  return getNextGoal(frontier_list, nextFrontier, robotP, false);
+}
+
+bool FullPathOptimizer::getNextGoal(
+  std::vector<FrontierPtr> & frontier_list,
+  FrontierPtr & nextFrontier,
+  geometry_msgs::msg::PoseStamped & robotP, bool used_one_turn)
 {
   num_frontiers_in_local_area = parameterInstance.getValue<double>(
     "fullPathOptimizer.num_frontiers_in_local_area");
@@ -391,6 +421,9 @@ bool FullPathOptimizer::getNextGoal(
     
     if (it != frontier_list.end() && (*it)->isAchievable() && !(*it)->isBlacklisted()) {
       current_goal_valid = true;
+      if (used_one_turn) {
+        current_committed_goal_ = *it;
+      }
       LOG_INFO("Current committed goal is still valid (UID: " << current_committed_goal_->getUID() << ")");
     } else {
       LOG_INFO("Current committed goal is no longer valid - will compute new goal");
@@ -439,7 +472,7 @@ bool FullPathOptimizer::getNextGoal(
     }
   }
 
-  if (!getBestFullPath(sortedFrontiers, bestFrontierWaypoint, robotP)) {
+  if (!getBestFullPath(sortedFrontiers, bestFrontierWaypoint, robotP, used_one_turn)) {
     nextFrontier = zeroFrontier;
     has_committed_goal_ = false;
     return false;
@@ -481,8 +514,10 @@ bool FullPathOptimizer::getNextGoal(
     robotPoseFrontier->setGoalPoint(robotP.pose.position.x, robotP.pose.position.y);
     robotPoseFrontier->setUID(generateUID(robotPoseFrontier));
     
-    double cost_to_current_goal = calculateLengthRobotToGoal(robotPoseFrontier, current_committed_goal_);
-    double cost_to_new_goal = calculateLengthRobotToGoal(robotPoseFrontier, candidateGoal);
+    double cost_to_current_goal = used_one_turn ? current_committed_goal_->getPathLengthInM() :
+      calculateLengthRobotToGoal(robotPoseFrontier, current_committed_goal_);
+    double cost_to_new_goal = used_one_turn ? candidateGoal->getPathLengthInM() :
+      calculateLengthRobotToGoal(robotPoseFrontier, candidateGoal);
     
     // Calculate improvement ratio
     double improvement = (cost_to_current_goal - cost_to_new_goal) / cost_to_current_goal;
@@ -514,7 +549,8 @@ bool FullPathOptimizer::getNextGoal(
     FrontierPtr robotPoseFrontier = std::make_shared<Frontier>();
     robotPoseFrontier->setGoalPoint(robotP.pose.position.x, robotP.pose.position.y);
     robotPoseFrontier->setUID(generateUID(robotPoseFrontier));
-    current_goal_path_cost_ = calculateLengthRobotToGoal(robotPoseFrontier, candidateGoal);
+    current_goal_path_cost_ = used_one_turn ? candidateGoal->getPathLengthInM() :
+      calculateLengthRobotToGoal(robotPoseFrontier, candidateGoal);
     nextFrontier = candidateGoal;
   }
   

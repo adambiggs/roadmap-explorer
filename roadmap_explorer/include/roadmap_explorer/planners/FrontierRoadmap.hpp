@@ -106,6 +106,8 @@ public:
 
   void constructNewEdgeRobotPose(const geometry_msgs::msg::Pose & rPose);
 
+  double connectionRadius() const {return RADIUS_TO_DECIDE_EDGES;}
+
   void publishRoadMap();
 
   std::size_t countTotalItemsInSpatialMap();
@@ -115,6 +117,10 @@ public:
   RoadmapPlanResult getPlan(
     double xs, double ys, bool useClosestToStart, double xe, double ye,
     bool useClosestToEnd, bool publish_plan);
+  RoadmapPlanResult getPlan(
+    double xs, double ys, bool useClosestToStart, double xe, double ye,
+    bool useClosestToEnd, bool publish_plan,
+    std::pair<FrontierPtr, FrontierPtr> * disconnected);
 
   RoadmapPlanResult getPlan(
     FrontierPtr & startNode, bool useClosestToStart, FrontierPtr & endNode,

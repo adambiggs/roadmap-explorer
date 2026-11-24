@@ -21,6 +21,8 @@
 
 #include "roadmap_explorer/planners/FrontierRoadmapPlugin.hpp"
 
+#include "roadmap_explorer/planners/OneTurnSearch.hpp"
+
 namespace roadmap_explorer
 {
 void PluginFrontierRoadmap::configure(std::shared_ptr<nav2_costmap_2d::Costmap2DROS> explore_costmap_ros, std::string name, std::shared_ptr<nav2_util::LifecycleNode> node)
@@ -51,6 +53,12 @@ void PluginFrontierRoadmap::reset()
 void PluginFrontierRoadmap::setPlanForFrontier(
   const geometry_msgs::msg::Pose start_pose_w,
   FrontierPtr & goal_point_w)
+{
+  scoreFrontier(start_pose_w, goal_point_w, nullptr);
+}
+
+void PluginFrontierRoadmap::scoreFrontier(const geometry_msgs::msg::Pose & start_pose_w,
+  FrontierPtr & goal_point_w, std::pair<FrontierPtr, FrontierPtr> * disconnected)
 {
   // if already not achievable, return
   if (goal_point_w->isAchievable() == false) {
@@ -96,7 +104,7 @@ void PluginFrontierRoadmap::setPlanForFrontier(
   auto path_length = frontierRoadmapInstance.getPlan(
     start_pose_w.position.x,
     start_pose_w.position.y, true,
-    goal_point_w->getGoalPoint().x, goal_point_w->getGoalPoint().y, true, false);
+    goal_point_w->getGoalPoint().x, goal_point_w->getGoalPoint().y, true, false, disconnected);
 
   // if path does not exist, set to unachievable
   if (path_length.path_exists == false) {
@@ -123,6 +131,54 @@ void PluginFrontierRoadmap::setPlanForFrontier(
   goal_point_w->setPathLengthInM(path_length.path_length_m);
   goal_point_w->setPathHeading(std::numeric_limits<double>::max());
   return;
+}
+
+bool PluginFrontierRoadmap::setPlansForFrontiers(const geometry_msgs::msg::Pose & start,
+  std::vector<FrontierPtr> & frontiers, const std::function<bool()> & canceled)
+{
+  struct Miss {
+    FrontierPtr frontier;
+    std::pair<FrontierPtr, FrontierPtr> endpoints;
+    double distance;
+  };
+  std::vector<Miss> misses;
+  bool achievable = false;
+  for (auto & frontier : frontiers) {
+    std::pair<FrontierPtr, FrontierPtr> endpoints;
+    scoreFrontier(start, frontier, &endpoints);
+    achievable |= frontier->isAchievable();
+    if (endpoints.first) {
+      const auto & goal = frontier->getGoalPoint();
+      misses.push_back({frontier, endpoints,
+        std::hypot(goal.x - start.position.x, goal.y - start.position.y)});
+    }
+  }
+  if (achievable || misses.empty() || canceled()) {
+    return false;
+  }
+  std::stable_sort(misses.begin(), misses.end(), [](const Miss & a, const Miss & b) {
+    return a.distance < b.distance;
+  });
+  const double radius = frontierRoadmapInstance.connectionRadius();
+  if (misses.front().distance >= radius) {
+    return false;
+  }
+  OneTurnSearch search(*exploration_costmap_, start.position, radius, canceled);
+  bool recovered = false;
+  for (auto & miss : misses) {
+    if (miss.distance >= radius || canceled()) {
+      break;
+    }
+    const auto length = search.connectionLength(miss.endpoints.first->getGoalPoint(),
+      miss.endpoints.second->getGoalPoint(), miss.frontier->getGoalPoint());
+    if (length && *length >= closeness_rejection_threshold_ && !canceled()) {
+      miss.frontier->setAchievability(true);
+      miss.frontier->setPathLength(*length);
+      miss.frontier->setPathLengthInM(*length);
+      recovered = true;
+    }
+  }
+  return recovered;
 }
 } // namespace roadmap_explorer
 

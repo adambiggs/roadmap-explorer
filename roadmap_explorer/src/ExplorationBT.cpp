@@ -231,6 +231,12 @@ bool RoadmapExplorationBT::makeBTNodes()
 
 uint16_t RoadmapExplorationBT::tickOnceWithSleep()
 {
+  return tickOnceWithSleep([] {return false;});
+}
+
+uint16_t RoadmapExplorationBT::tickOnceWithSleep(const std::function<bool()> & canceled)
+{
+  blackboard->set("exploration_canceled", canceled);
   int bt_sleep_duration = parameterInstance.getValue<int64_t>("explorationBT.bt_sleep_ms");
   std::this_thread::sleep_for(std::chrono::milliseconds(bt_sleep_duration));
   if(sensor_simulator_)

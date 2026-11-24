@@ -124,6 +124,9 @@ public:
   bool getNextGoal(
     std::vector<FrontierPtr> & frontier_list, FrontierPtr & nextFrontier,
     geometry_msgs::msg::PoseStamped & robotP);
+  bool getNextGoal(
+    std::vector<FrontierPtr> & frontier_list, FrontierPtr & nextFrontier,
+    geometry_msgs::msg::PoseStamped & robotP, bool used_one_turn);
 
   /**
    * @brief Clears the cached path distances between frontier pairs
@@ -173,7 +176,7 @@ private:
 
   bool getBestFullPath(
     SortedFrontiers & sortedFrontiers, std::vector<FrontierPtr> & bestPath,
-    geometry_msgs::msg::PoseStamped & robotP);
+    geometry_msgs::msg::PoseStamped & robotP, bool used_one_turn);
 
   std::shared_ptr<nav2_util::LifecycleNode> node_;
   std::shared_ptr<nav2_costmap_2d::Costmap2DROS> explore_costmap_ros_;

@@ -77,6 +77,7 @@ public:
   bool makeBTNodes();
 
   uint16_t tickOnceWithSleep();
+  uint16_t tickOnceWithSleep(const std::function<bool()> & canceled);
 
   void halt();
 

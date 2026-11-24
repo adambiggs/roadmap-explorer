@@ -51,3 +51,10 @@ set_target_properties(test_cost_assigner PROPERTIES
 ament_add_gtest(test_navigation_cancel test_navigation_cancel.cpp)
 ament_target_dependencies(test_navigation_cancel rclcpp_action nav2_msgs nav2_util tf2_ros)
 target_link_libraries(test_navigation_cancel roadmap_explorer_core)
+
+ament_add_gtest(test_one_turn_search test_one_turn_search.cpp ../../src/planners/OneTurnSearch.cpp)
+ament_target_dependencies(test_one_turn_search geometry_msgs nav2_costmap_2d)
+
+ament_add_gtest(test_one_turn_frontier_planner test_one_turn_frontier_planner.cpp)
+ament_target_dependencies(test_one_turn_frontier_planner ${dependencies} roadmap_explorer_msgs)
+target_link_libraries(test_one_turn_frontier_planner roadmap_explorer_core)

@@ -227,7 +227,7 @@ void ExplorationServer::execute(const std::shared_ptr<GoalHandleExplore> goal_ha
     }
 
     while (rclcpp::ok()) {
-      auto error_code = exploration_bt_->tickOnceWithSleep();
+      auto error_code = exploration_bt_->tickOnceWithSleep([goal_handle] {return goal_handle->is_canceling() || !rclcpp::ok();});
 
       // Check for cancellation
       if (goal_handle->is_canceling()) {
