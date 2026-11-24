@@ -71,7 +71,6 @@ public:
     std::string update_topic_name);
   ~Nav2Interface();
   void goalPoseCallback(const geometry_msgs::msg::PoseStamped::SharedPtr msg);
-  bool sendCancelWaitForResponse(action_msgs::srv::CancelGoal::Response & response);
   void cancelAllGoals();
   virtual bool sendGoal(geometry_msgs::msg::PoseStamped & pose);
   void sendUpdatedGoal(geometry_msgs::msg::PoseStamped pose);
@@ -104,6 +103,7 @@ public:
 
   bool isGoalHandleNull()
   {
+    std::lock_guard<std::recursive_mutex> lock(goal_state_mutex_);
     return current_goal_handle_ == nullptr;
   }
 
@@ -114,8 +114,9 @@ protected:
   void nav2GoalResultCallback(const typename GoalHandle::WrappedResult & result);
   void nav2GoalResponseCallback(const typename GoalHandle::SharedPtr & goal_handle);
 
+  void requestCancel(const typename GoalHandle::SharedPtr & goal_handle);
+
   rclcpp_action::Client<ActionT>::SharedPtr nav2Client_;
-  std::mutex nav2Clientlock_;
   rclcpp_action::Client<ActionT>::SendGoalOptions nav2_goal_options_;
   rclcpp::CallbackGroup::SharedPtr nav2_client_callback_group_;
   rclcpp_lifecycle::LifecyclePublisher<geometry_msgs::msg::PoseStamped>::SharedPtr

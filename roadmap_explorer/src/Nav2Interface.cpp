@@ -60,80 +60,37 @@ Nav2Interface<ActionT>::~Nav2Interface()
   LOG_INFO("Nav2Interface::~Nav2Interface()");
   updated_goal_publisher_->on_deactivate();
 }
-// --------------------Internal function-----------------------
 
 template<typename ActionT>
-bool Nav2Interface<ActionT>::sendCancelWaitForResponse(
-  action_msgs::srv::CancelGoal::Response & response)
+void Nav2Interface<ActionT>::requestCancel(const typename GoalHandle::SharedPtr & goal_handle)
 {
-  if (current_goal_handle_ == nullptr) {
-    LOG_ERROR("No valid goal to cancel");
-    response.return_code = action_msgs::srv::CancelGoal::Response::ERROR_GOAL_TERMINATED;
-    return true;
+  // A cancel response acknowledges the request. Only the child's result is terminal.
+  try {
+    nav2Client_->async_cancel_goal(goal_handle, [](auto response) {
+      if (response->return_code != action_msgs::srv::CancelGoal::Response::ERROR_NONE) {
+        LOG_WARN("Nav2 returned cancel code " << static_cast<int>(response->return_code)
+                 << "; waiting for the goal result");
+      }
+    });
+  } catch (const std::exception & error) {
+    // rclcpp_action registers the result request after the goal-response callback returns.
+    LOG_ERROR("Could not submit Nav2 cancel request: " << error.what()
+              << "; waiting for the goal result");
   }
-  if (isGoalTerminated()) {
-    LOG_ERROR("The goal is terminated. What are you cancelling/manually aborting?");
-    return false;
-  }
-  if (nav2_goal_state_ == NavGoalStatus::CANCELLING) {
-    LOG_ERROR("Canceling the previous goal. Wait for cancel result before sending another one.");
-    return false;
-  }
-  // Get the cancellation future from nav2.
-  // Lock ordering: always acquire goal_state_mutex_ before nav2Clientlock_ to prevent deadlock
-  LOG_INFO("Acquiring lock for cancel operation");
-  std::lock_guard<std::recursive_mutex> lock(goal_state_mutex_);
-  std::lock_guard<std::mutex> lock2(nav2Clientlock_);
-  LOG_INFO("Canceling goal");
-  
-  auto cancel_future = nav2Client_->async_cancel_all_goals();
-  LOG_WARN("Sent cancel request to nav2, waiting for response");
-  
-  // Wait for cancel response with timeout (ROS2 recommended approach)
-  const int timeout_seconds = 5;
-  int elapsed_seconds = 0;
-  while (cancel_future.wait_for(std::chrono::seconds(1)) != std::future_status::ready && rclcpp::ok()) {
-    elapsed_seconds++;
-    LOG_WARN("Waiting for cancel response (" << elapsed_seconds << "/" << timeout_seconds << " seconds)");
-    
-    if (elapsed_seconds >= timeout_seconds) {
-      LOG_ERROR(
-        "Cancel request timed out after " << timeout_seconds << " seconds. The action server may be unresponsive. Moving on to result.");
-      response.return_code = action_msgs::srv::CancelGoal::Response::ERROR_NONE;
-      return false;
-    }
-  }
-
-  // Wait until the cancel request has been accepted or an error occurs.
-  auto result = cancel_future.get();
-  LOG_INFO("Got cancel response");
-  if (!result) {
-    LOG_ERROR("The future response is null");
-    return false;
-  }
-  response.return_code = result->return_code;
-  return true;
 }
 
 template<typename ActionT>
 void Nav2Interface<ActionT>::cancelAllGoals()
 {
   std::lock_guard<std::recursive_mutex> lock(goal_state_mutex_);
-  LOG_INFO("Cancelling goal.");
-  action_msgs::srv::CancelGoal::Response response;
-  if (sendCancelWaitForResponse(response)) {
-    if (response.return_code == action_msgs::srv::CancelGoal::Response::ERROR_NONE) {
-      LOG_INFO("Cancellation request accepted by nav2 server. Will cancel the goal.");
-      nav2_goal_state_ = NavGoalStatus::CANCELLING;
-    } else if (response.return_code == action_msgs::srv::CancelGoal::Response::ERROR_REJECTED) {
-      LOG_INFO("Cancellation request rejected by Nav2 action server, not cancelling goal");
-    } else {
-      LOG_ERROR("No ongoing goal in nav2.");
-      nav2_goal_state_ = NavGoalStatus::CANCELLED;
-    }
-  } else {
-    LOG_ERROR("sendCancelWaitForResponse did not succeed in cancelAllGoals");
+  if (!isGoalActive() || nav2_goal_state_ == NavGoalStatus::CANCELLING) {
+    return;
   }
+  nav2_goal_state_ = NavGoalStatus::CANCELLING;
+  if (current_goal_handle_) {
+    requestCancel(current_goal_handle_);
+  }
+  // If the goal is still being sent, the response callback owns the request.
 }
 
 template<typename ActionT>
@@ -163,7 +120,8 @@ void Nav2Interface<ActionT>::nav2GoalResultCallback(
       nav2_goal_state_ = NavGoalStatus::CANCELLED;
       break;
     default:
-      LOG_ERROR("Unknown nav2 goal result code");
+      LOG_ERROR("Nav2 returned an unknown goal result; unable to confirm termination");
+      return;
   }
   current_goal_handle_.reset();
   LOG_INFO("Nav2 result callback executed");
@@ -180,13 +138,18 @@ void Nav2Interface<ActionT>::nav2GoalResponseCallback(
   } else {
     LOG_INFO("Goal accepted by Nav2 server, waiting for result");
     current_goal_handle_ = goal_handle;
-    nav2_goal_state_ = NavGoalStatus::ONGOING;
+    if (nav2_goal_state_ == NavGoalStatus::CANCELLING) {
+      requestCancel(goal_handle);
+    } else {
+      nav2_goal_state_ = NavGoalStatus::ONGOING;
+    }
   }
 }
 
 template<typename ActionT>
 bool Nav2Interface<ActionT>::canSendNewGoal()
 {
+  std::lock_guard<std::recursive_mutex> lock(goal_state_mutex_);
   if (current_goal_handle_ != nullptr) {
     LOG_ERROR(
       "Goal handle not null. There is an ongoing goal but you are sending a new one. Terminate this first.");
@@ -210,19 +173,18 @@ bool Nav2Interface<ActionT>::canSendNewGoal()
 template<typename ActionT>
 bool Nav2Interface<ActionT>::sendGoal(geometry_msgs::msg::PoseStamped & pose)
 {
+  std::lock_guard<std::recursive_mutex> lock(goal_state_mutex_);
   // Only allow a new goal if the current state is IDLE or in a terminal state.
   if (!canSendNewGoal()) {
     LOG_ERROR("Cannot send new goal");
     return false;
   }
-  std::lock_guard<std::recursive_mutex> lock(this->goal_state_mutex_);
   auto goal_pose = pose;
   goal_pose.header.stamp = this->node_->get_clock()->now();
 
   LOG_INFO("New goal being sent to nav2");
   this->nav2_goal_state_ = NavGoalStatus::SENDING_GOAL;
   LOG_INFO("SendGoal but new goal");
-  std::lock_guard<std::mutex> lock2(this->nav2Clientlock_);
   auto nav2_goal_ = std::make_shared<typename ActionT::Goal>();
   nav2_goal_->pose = goal_pose;
   nav2_goal_->behavior_tree = parameterInstance.getValue<std::string>("explorationBT.nav2_bt_xml");
