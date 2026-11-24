@@ -21,6 +21,7 @@
 
 #include "roadmap_explorer/bt_plugins/BootstrapRandomWalkPlugin.hpp"
 #include "roadmap_explorer/Parameters.hpp"
+#include <nav2_util/node_utils.hpp>
 #include <pluginlib/class_list_macros.hpp>
 #include <random>
 
@@ -61,17 +62,27 @@ public:
             rclcpp::SensorDataQoS(),
             std::bind(&BootstrapRandomWalkBT::laserScanCallback, this, std::placeholders::_1));
         
-        // Get parameters with defaults
-        ros_node_ptr_->declare_parameter("bootstrap.enabled", true);
-        ros_node_ptr_->declare_parameter("bootstrap.min_known_cells", 100);
-        ros_node_ptr_->declare_parameter("bootstrap.unknown_map_threshold", 0.95);
-        ros_node_ptr_->declare_parameter("bootstrap.max_duration", 60.0);
-        ros_node_ptr_->declare_parameter("bootstrap.linear_velocity", 0.2);
-        ros_node_ptr_->declare_parameter("bootstrap.angular_velocity", 0.5);
-        ros_node_ptr_->declare_parameter("bootstrap.min_obstacle_distance", 0.5);
-        ros_node_ptr_->declare_parameter("bootstrap.scan_front_arc", 45.0);
-        ros_node_ptr_->declare_parameter("bootstrap.turn_duration", 2.0);
-        ros_node_ptr_->declare_parameter("bootstrap.forward_duration", 3.0);
+        // A new behavior tree reuses the same lifecycle node and its parameters.
+        nav2_util::declare_parameter_if_not_declared(
+            ros_node_ptr_, "bootstrap.enabled", rclcpp::ParameterValue(true));
+        nav2_util::declare_parameter_if_not_declared(
+            ros_node_ptr_, "bootstrap.min_known_cells", rclcpp::ParameterValue(100));
+        nav2_util::declare_parameter_if_not_declared(
+            ros_node_ptr_, "bootstrap.unknown_map_threshold", rclcpp::ParameterValue(0.95));
+        nav2_util::declare_parameter_if_not_declared(
+            ros_node_ptr_, "bootstrap.max_duration", rclcpp::ParameterValue(60.0));
+        nav2_util::declare_parameter_if_not_declared(
+            ros_node_ptr_, "bootstrap.linear_velocity", rclcpp::ParameterValue(0.2));
+        nav2_util::declare_parameter_if_not_declared(
+            ros_node_ptr_, "bootstrap.angular_velocity", rclcpp::ParameterValue(0.5));
+        nav2_util::declare_parameter_if_not_declared(
+            ros_node_ptr_, "bootstrap.min_obstacle_distance", rclcpp::ParameterValue(0.5));
+        nav2_util::declare_parameter_if_not_declared(
+            ros_node_ptr_, "bootstrap.scan_front_arc", rclcpp::ParameterValue(45.0));
+        nav2_util::declare_parameter_if_not_declared(
+            ros_node_ptr_, "bootstrap.turn_duration", rclcpp::ParameterValue(2.0));
+        nav2_util::declare_parameter_if_not_declared(
+            ros_node_ptr_, "bootstrap.forward_duration", rclcpp::ParameterValue(3.0));
         
         enabled_ = ros_node_ptr_->get_parameter("bootstrap.enabled").as_bool();
         min_known_cells_ = ros_node_ptr_->get_parameter("bootstrap.min_known_cells").as_int();
