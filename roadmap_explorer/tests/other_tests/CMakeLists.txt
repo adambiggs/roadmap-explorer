@@ -47,3 +47,7 @@ set_target_properties(test_cost_assigner PROPERTIES
   CXX_STANDARD_REQUIRED ON
 )
 
+
+ament_add_gtest(test_navigation_cancel test_navigation_cancel.cpp)
+ament_target_dependencies(test_navigation_cancel rclcpp_action nav2_msgs nav2_util tf2_ros)
+target_link_libraries(test_navigation_cancel roadmap_explorer_core)
