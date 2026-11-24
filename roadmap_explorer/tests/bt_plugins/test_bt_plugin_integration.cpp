@@ -2,6 +2,7 @@
 #include <memory>
 #include <string>
 
+#include "roadmap_explorer/bt_plugins/BootstrapRandomWalkPlugin.hpp"
 #include "roadmap_explorer/bt_plugins/LogIterationPlugin.hpp"
 #include <pluginlib/class_loader.hpp>
 
@@ -81,6 +82,43 @@ protected:
   std::shared_ptr<BTContext> context_;
   std::unique_ptr<BT::BehaviorTreeFactory> factory_;
 };
+
+TEST_F(BTPluginIntegrationTest, RebuiltBootstrapTreeReadsUpdatedParameters)
+{
+  costmap_ros_ = std::make_shared<nav2_costmap_2d::Costmap2DROS>("test_bootstrap_costmap");
+  ASSERT_EQ(costmap_ros_->on_configure(rclcpp_lifecycle::State()), nav2_util::CallbackReturn::SUCCESS);
+  auto * grid = costmap_ros_->getCostmap();
+  grid->resizeMap(4, 4, 0.1, 0.0, 0.0);
+  grid->resetMapToValue(0, 0, 4, 4, nav2_costmap_2d::NO_INFORMATION);
+
+  auto node_options = rclcpp::NodeOptions();
+  node_options.arguments({
+    "--ros-args", "-r", "/cmd_vel_explore:=/bootstrap_test/cmd_vel",
+    "-r", "/scan:=/bootstrap_test/scan"});
+  const auto context = createContext();
+  context->node = std::make_shared<nav2_util::LifecycleNode>(
+    "test_bootstrap_node", "", node_options);
+  BootstrapRandomWalkPlugin plugin;
+  const auto xml = R"(
+    <root BTCPP_format="4">
+      <BehaviorTree ID="BootstrapTest">
+        <BootstrapRandomWalk bootstrap_completed="{bootstrap_completed}" />
+      </BehaviorTree>
+    </root>
+  )";
+  {
+    BT::BehaviorTreeFactory first_factory;
+    plugin.registerNodes(first_factory, context);
+    auto tree = first_factory.createTreeFromText(xml);
+    ASSERT_EQ(tree.rootNode()->executeTick(), BT::NodeStatus::RUNNING);
+  }
+
+  ASSERT_TRUE(context->node->set_parameter(rclcpp::Parameter("bootstrap.enabled", false)).successful);
+  BT::BehaviorTreeFactory second_factory;
+  plugin.registerNodes(second_factory, context);
+  auto tree = second_factory.createTreeFromText(xml);
+  EXPECT_EQ(tree.rootNode()->executeTick(), BT::NodeStatus::SUCCESS);
+}
 
 // Test plugin loading through pluginlib
 TEST_F(BTPluginIntegrationTest, PluginlibLoading)
