@@ -130,6 +130,11 @@ rclcpp_action::GoalResponse ExplorationServer::handle_goal(
     LOG_WARN("Received goal while inactive -> rejecting");
     return rclcpp_action::GoalResponse::REJECT;
   }
+  bool owned = false;
+  if (!session_owned_.compare_exchange_strong(owned, true)) {
+    LOG_WARN("Received goal while another goal owns the exploration session -> rejecting");
+    return rclcpp_action::GoalResponse::REJECT;
+  }
   LOG_INFO("Accepted new ExploreArea goal");
   return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
 }
@@ -291,6 +296,7 @@ void ExplorationServer::terminateGoal(
       exploration_bt_->halt();
     }
   }
+  session_owned_ = false;
 
   switch (terminal_state) {
     case ActionTerminalState::SUCCEED:
