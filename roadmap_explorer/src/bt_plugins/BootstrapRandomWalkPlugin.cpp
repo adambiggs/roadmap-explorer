@@ -382,10 +382,11 @@ private:
     std::shared_ptr<nav2_util::LifecycleNode> ros_node_ptr_;
     
     rclcpp_lifecycle::LifecyclePublisher<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_pub_;
-    rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr scan_sub_;
     
     std::mutex scan_mutex_;
     sensor_msgs::msg::LaserScan::SharedPtr last_scan_;
+    // Declared after the state its callback writes, so it is destroyed first.
+    rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr scan_sub_;
     
     // Parameters
     bool enabled_;
