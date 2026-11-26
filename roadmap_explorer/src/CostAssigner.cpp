@@ -19,7 +19,11 @@
     under the License.
 */
 
+#include <algorithm>
+#include <cmath>
+
 #include <roadmap_explorer/CostAssigner.hpp>
+#include "roadmap_explorer/Parameters.hpp"
 
 namespace roadmap_explorer
 {
@@ -207,9 +211,11 @@ void CostAssigner::setFrontierBlacklist(std::vector<FrontierPtr> & blacklist)
 {
   std::lock_guard<std::mutex> lock(blacklist_mutex_);
   LOG_DEBUG("Setting frontier blacklist with size: " << blacklist.size());
+  blacklist_radius_ = parameterInstance.getValue<double>("fullPathOptimizer.goal_match_radius");
+  frontier_blacklist_.clear();
   for (auto frontier : blacklist) {
     LOG_DEBUG("Adding frontier to blacklist: " << frontier);
-    frontier_blacklist_[frontier] = true;
+    frontier_blacklist_.push_back(frontier->getGoalPoint());
   }
 
   LOG_DEBUG("Blacklist size is: " << frontier_blacklist_.size());
@@ -256,13 +262,19 @@ void CostAssigner::initializePlugins()
 
 bool CostAssigner::prepareFrontier(FrontierPtr & frontier)
 {
-  if (frontier_blacklist_.count(frontier) > 0) {
+  const auto goal_point = frontier->getGoalPoint();
+  const auto blacklisted = std::any_of(
+    frontier_blacklist_.begin(), frontier_blacklist_.end(),
+    [&](const geometry_msgs::msg::Point & prohibited) {
+      return std::hypot(goal_point.x - prohibited.x, goal_point.y - prohibited.y) <=
+             blacklist_radius_;
+    });
+  if (blacklisted) {
     setFrontierUnachievable(frontier);
     return false;
   }
 
   // Check if frontier is outside polygon
-  auto goal_point = frontier->getGoalPoint();
   if (goal_point.x < polygon_xy_min_max_[0] ||
       goal_point.y < polygon_xy_min_max_[1] ||
       goal_point.x > polygon_xy_min_max_[2] ||

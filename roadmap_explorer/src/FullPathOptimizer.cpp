@@ -39,8 +39,8 @@ FullPathOptimizer::FullPathOptimizer(
   add_yaw_to_tsp = parameterInstance.getValue<bool>("fullPathOptimizer.add_yaw_to_tsp");
   add_distance_to_robot_to_tsp = parameterInstance.getValue<bool>(
     "fullPathOptimizer.add_distance_to_robot_to_tsp");
-  goal_hysteresis_threshold_ = parameterInstance.getValue<double>(
-    "fullPathOptimizer.goal_hysteresis_threshold");
+
+  GoalCommitment::validate(commitmentSettings());
 
   explore_costmap_ros_ = explore_costmap_ros;
   local_search_area_publisher_ = node_->create_publisher<visualization_msgs::msg::MarkerArray>(
@@ -83,6 +83,16 @@ void FullPathOptimizer::addToMarkerArraySolidPolygon(
   marker.color.b = b;
   marker.lifetime = rclcpp::Duration::from_seconds(MARKER_LIFETIME_SECONDS);
   marker_array.markers.push_back(marker);
+}
+
+GoalCommitment::Settings FullPathOptimizer::commitmentSettings() const
+{
+  return {
+    parameterInstance.getValue<double>("fullPathOptimizer.goal_match_radius"),
+    parameterInstance.getValue<double>("fullPathOptimizer.goal_stuck_timeout"),
+    parameterInstance.getValue<double>("fullPathOptimizer.goal_min_progress"),
+    parameterInstance.getValue<double>("fullPathOptimizer.goal_retry_cooldown"),
+    parameterInstance.getValue<int64_t>("fullPathOptimizer.goal_max_attempts")};
 }
 
 double FullPathOptimizer::calculatePathLength(std::vector<FrontierPtr> & path)
@@ -390,14 +400,7 @@ bool FullPathOptimizer::getBestFullPath(
 bool FullPathOptimizer::getNextGoal(
   std::vector<FrontierPtr> & frontier_list,
   FrontierPtr & nextFrontier,
-  geometry_msgs::msg::PoseStamped & robotP)
-{
-  return getNextGoal(frontier_list, nextFrontier, robotP, false);
-}
-
-bool FullPathOptimizer::getNextGoal(
-  std::vector<FrontierPtr> & frontier_list,
-  FrontierPtr & nextFrontier,
+  FrontierPtr & abandonedFrontier,
   geometry_msgs::msg::PoseStamped & robotP, bool used_one_turn)
 {
   num_frontiers_in_local_area = parameterInstance.getValue<double>(
@@ -407,29 +410,53 @@ bool FullPathOptimizer::getNextGoal(
   add_yaw_to_tsp = parameterInstance.getValue<bool>("fullPathOptimizer.add_yaw_to_tsp");
   add_distance_to_robot_to_tsp = parameterInstance.getValue<bool>(
     "fullPathOptimizer.add_distance_to_robot_to_tsp");
-  goal_hysteresis_threshold_ = parameterInstance.getValue<double>(
-    "fullPathOptimizer.goal_hysteresis_threshold");
+  const auto commitment_settings = commitmentSettings();
+  // The planner plugin's length from the robot, which every admitted
+  // frontier has, including one beyond the roadmap's planning distance.
+  const auto remaining = [](const FrontierPtr & frontier) {
+      return frontier->getPathLengthInM();
+    };
+  const double now = node_->now().seconds();
 
-  // Check if current committed goal is still valid
-  bool current_goal_valid = false;
-  if (has_committed_goal_ && current_committed_goal_) {
-    // Check if the committed goal still exists in the frontier list and is valid
-    auto it = std::find_if(frontier_list.begin(), frontier_list.end(),
-      [this](const FrontierPtr& f) {
-        return f->getUID() == current_committed_goal_->getUID();
-      });
-    
-    if (it != frontier_list.end() && (*it)->isAchievable() && !(*it)->isBlacklisted()) {
-      current_goal_valid = true;
-      if (used_one_turn) {
-        current_committed_goal_ = *it;
+  // Stay with the committed goal while it lasts. Comparing it with better
+  // candidates each search made the robot alternate between two frontiers.
+  abandonedFrontier.reset();
+  const auto decision = goal_commitment_.keep(frontier_list, remaining, now, commitment_settings);
+  switch (decision.outcome) {
+    case GoalCommitment::Outcome::Kept:
+      LOG_DEBUG("Keeping exploration goal " << decision.frontier);
+      nextFrontier = decision.frontier;
+      if (rosVisualizerInstance.getNumSubscribers("full_path") > 0) {
+        nav_msgs::msg::Path keptPath;
+        keptPath.header.frame_id = "map";
+        keptPath.header.stamp = node_->now();
+        computePathBetweenPointsThetaStar(
+          keptPath, robotP.pose.position, nextFrontier->getGoalPoint(), true,
+          explore_costmap_ros_->getCostmap());
+        rosVisualizerInstance.visualizePath("full_path", keptPath);
       }
-      LOG_INFO("Current committed goal is still valid (UID: " << current_committed_goal_->getUID() << ")");
-    } else {
-      LOG_INFO("Current committed goal is no longer valid - will compute new goal");
-      has_committed_goal_ = false;
-    }
+      return true;
+    case GoalCommitment::Outcome::Lost:
+      LOG_INFO(
+        "Exploration goal " << decision.frontier <<
+          " is no longer an achievable frontier. Choosing a new goal.");
+      break;
+    case GoalCommitment::Outcome::SetAside:
+      LOG_WARN(
+        "No progress toward exploration goal " << decision.frontier << " for " <<
+          commitment_settings.stuck_timeout << " s. Setting it aside for " <<
+          commitment_settings.retry_cooldown << " s and choosing a new goal.");
+      break;
+    case GoalCommitment::Outcome::GivenUp:
+      LOG_WARN(
+        "No progress toward exploration goal " << decision.frontier << " on attempt " <<
+          commitment_settings.max_attempts << ". Blacklisting it and choosing a new goal.");
+      abandonedFrontier = decision.frontier;
+      break;
+    case GoalCommitment::Outcome::None:
+      break;
   }
+  goal_commitment_.holdBack(frontier_list, now, commitment_settings);
 
   SortedFrontiers sortedFrontiers;
   // sort based on path length
@@ -456,25 +483,20 @@ bool FullPathOptimizer::getNextGoal(
 
       rosVisualizerInstance.visualizePath("global_repositioning_path", globalReposPath);
 
-      // Update committed goal since we're switching to global repositioning
-      current_committed_goal_ = nextFrontier;
-      has_committed_goal_ = true;
-      current_goal_path_cost_ = nextFrontier->getPathLengthInM();
-      LOG_INFO("Committing to global repositioning goal (UID: " << nextFrontier->getUID() << ")");
+      goal_commitment_.commit(nextFrontier, remaining(nextFrontier), now);
+      LOG_INFO("Committing to global repositioning goal " << nextFrontier);
 
       return true;
     } else {
       LOG_ERROR(
         "Could not find local or global frontiers. Returning a zero frontier. The program may crash if goal point is checked...");
       nextFrontier = zeroFrontier;
-      has_committed_goal_ = false;
       return false;
     }
   }
 
   if (!getBestFullPath(sortedFrontiers, bestFrontierWaypoint, robotP, used_one_turn)) {
     nextFrontier = zeroFrontier;
-    has_committed_goal_ = false;
     return false;
   }
 
@@ -504,56 +526,10 @@ bool FullPathOptimizer::getNextGoal(
   }
   EventLoggerInstance.endEvent("publishPlan", 2);
   
-  // 0 is robot pose. Return the first frontier in the path.
-  FrontierPtr candidateGoal = bestFrontierWaypoint[1];
-  
-  // Apply hysteresis logic to prevent frequent goal switching
-  if (current_goal_valid) {
-    // Calculate cost to reach the current committed goal
-    FrontierPtr robotPoseFrontier = std::make_shared<Frontier>();
-    robotPoseFrontier->setGoalPoint(robotP.pose.position.x, robotP.pose.position.y);
-    robotPoseFrontier->setUID(generateUID(robotPoseFrontier));
-    
-    double cost_to_current_goal = used_one_turn ? current_committed_goal_->getPathLengthInM() :
-      calculateLengthRobotToGoal(robotPoseFrontier, current_committed_goal_);
-    double cost_to_new_goal = used_one_turn ? candidateGoal->getPathLengthInM() :
-      calculateLengthRobotToGoal(robotPoseFrontier, candidateGoal);
-    
-    // Calculate improvement ratio
-    double improvement = (cost_to_current_goal - cost_to_new_goal) / cost_to_current_goal;
-    
-    LOG_INFO("Hysteresis check - Current goal cost: " << cost_to_current_goal << 
-             ", New goal cost: " << cost_to_new_goal << 
-             ", Improvement: " << (improvement * 100.0) << "%");
-    
-    if (improvement >= goal_hysteresis_threshold_) {
-      // New goal is significantly better - switch to it
-      LOG_INFO("New goal is " << (improvement * 100.0) << "% better (threshold: " << 
-               (goal_hysteresis_threshold_ * 100.0) << "%) - switching goals");
-      LOG_INFO("Switching from goal UID " << current_committed_goal_->getUID() << 
-               " to " << candidateGoal->getUID());
-      current_committed_goal_ = candidateGoal;
-      current_goal_path_cost_ = cost_to_new_goal;
-      nextFrontier = candidateGoal;
-    } else {
-      // Stick with current goal
-      LOG_INFO("Sticking with current goal (improvement " << (improvement * 100.0) << 
-               "% below threshold " << (goal_hysteresis_threshold_ * 100.0) << "%)");
-      nextFrontier = current_committed_goal_;
-    }
-  } else {
-    // No current goal or it became invalid - commit to the new candidate
-    LOG_INFO("No valid committed goal - committing to new goal (UID: " << candidateGoal->getUID() << ")");
-    current_committed_goal_ = candidateGoal;
-    has_committed_goal_ = true;
-    FrontierPtr robotPoseFrontier = std::make_shared<Frontier>();
-    robotPoseFrontier->setGoalPoint(robotP.pose.position.x, robotP.pose.position.y);
-    robotPoseFrontier->setUID(generateUID(robotPoseFrontier));
-    current_goal_path_cost_ = used_one_turn ? candidateGoal->getPathLengthInM() :
-      calculateLengthRobotToGoal(robotPoseFrontier, candidateGoal);
-    nextFrontier = candidateGoal;
-  }
-  
+  // 0 is robot pose. Commit to the first frontier in the path.
+  nextFrontier = bestFrontierWaypoint[1];
+  goal_commitment_.commit(nextFrontier, remaining(nextFrontier), now);
+  LOG_INFO("Committing to exploration goal " << nextFrontier);
   return true;
 }
 

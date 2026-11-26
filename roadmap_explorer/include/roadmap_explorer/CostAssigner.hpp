@@ -132,9 +132,11 @@ private:
   std::shared_ptr<nav2_costmap_2d::Costmap2DROS> explore_costmap_ros_;
   std::shared_ptr<nav2_util::LifecycleNode> node_;
 
-  // map of blacklists with hash map and equality which only considers goal point
-  std::unordered_map<FrontierPtr, bool, FrontierHash,
-    FrontierGoalPointEquality> frontier_blacklist_;
+  // Goal points of blacklisted frontiers. A frontier's goal point moves as the
+  // map grows, so any frontier within fullPathOptimizer.goal_match_radius of
+  // one of them is the same frontier.
+  std::vector<geometry_msgs::msg::Point> frontier_blacklist_;
+  double blacklist_radius_ = 0.0;
   std::mutex blacklist_mutex_;
 
   double min_traversable_distance = std::numeric_limits<double>::max();

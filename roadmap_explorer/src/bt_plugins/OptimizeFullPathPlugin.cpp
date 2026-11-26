@@ -21,6 +21,7 @@
 
 #include "roadmap_explorer/bt_plugins/OptimizeFullPathPlugin.hpp"
 #include "roadmap_explorer/CostAssigner.hpp"
+#include "roadmap_explorer/Nav2Interface.hpp"
 #include "roadmap_explorer/Parameters.hpp"
 #include <pluginlib/class_list_macros.hpp>
 #include <geometry_msgs/msg/polygon_stamped.hpp>
@@ -34,9 +35,11 @@ namespace roadmap_explorer
         const std::string & name, const BT::NodeConfiguration & config,
         std::shared_ptr<FullPathOptimizer> full_path_optimizer,
         std::shared_ptr<nav2_costmap_2d::Costmap2DROS> explore_costmap_ros,
-        std::shared_ptr<nav2_util::LifecycleNode> node)
+        std::shared_ptr<nav2_util::LifecycleNode> node,
+        std::shared_ptr<Nav2Interface<nav2_msgs::action::NavigateToPose>> nav2_interface)
     : BT::SyncActionNode(name, config)
     {
+        nav2_interface_ = nav2_interface;
         explore_costmap_ros_ = explore_costmap_ros;
         full_path_optimizer_ = full_path_optimizer;
         node_ = node;
@@ -64,10 +67,20 @@ namespace roadmap_explorer
         throw RoadmapExplorerException("Failed to retrieve latest_robot_pose from blackboard.");
         }
         FrontierPtr allocatedFrontier = std::make_shared<Frontier>();
+        FrontierPtr abandonedFrontier;
         bool used_one_turn = false;
         config().blackboard->get("one_turn_recovery", used_one_turn);
         auto return_state = full_path_optimizer_->getNextGoal(
-        globalFrontierList, allocatedFrontier, robotP, used_one_turn);
+        globalFrontierList, allocatedFrontier, abandonedFrontier, robotP, used_one_turn);
+        if (abandonedFrontier) {
+        blacklistFrontier(abandonedFrontier, config().blackboard);
+        if (!return_state) {
+            // No replacement goal will reach Nav2, so stop it driving to the
+            // one just given up.
+            LOG_WARN("No exploration goal replaces " << abandonedFrontier << ". Cancelling Nav2.");
+            nav2_interface_->cancelAllGoals();
+        }
+        }
         if (return_state) {
         setOutput<FrontierPtr>("allocated_frontier", allocatedFrontier);
         } else {
@@ -104,6 +117,7 @@ namespace roadmap_explorer
     std::shared_ptr<FullPathOptimizer> full_path_optimizer_;
     std::shared_ptr<nav2_costmap_2d::Costmap2DROS> explore_costmap_ros_;
     std::shared_ptr<nav2_util::LifecycleNode> node_;
+    std::shared_ptr<Nav2Interface<nav2_msgs::action::NavigateToPose>> nav2_interface_;
     };
 
     OptimizeFullPathPlugin::OptimizeFullPathPlugin()
@@ -124,7 +138,8 @@ namespace roadmap_explorer
                 config, 
                 context->full_path_optimizer,
                 context->explore_costmap_ros,
-                context->node);
+                context->node,
+                context->nav2_interface);
         };
         factory.registerBuilder<OptimizeFullPathBT>("OptimizeFullPath", builder);
     }

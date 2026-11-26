@@ -39,6 +39,7 @@
 
 #include "roadmap_explorer/Parameters.hpp"
 #include "roadmap_explorer/Frontier.hpp"
+#include "roadmap_explorer/GoalCommitment.hpp"
 namespace roadmap_explorer
 {
 
@@ -115,18 +116,27 @@ public:
   ~FullPathOptimizer();
 
   /**
-   * @brief Computes the next optimal frontier to visit
+   * @brief Returns the committed exploration goal, or commits to the next optimal frontier
    * @param frontier_list List of available frontiers to consider
    * @param nextFrontier Output parameter for the selected next frontier
+   * @param abandonedFrontier Set to the committed goal when it was given up for lack of
+   *   progress, and reset otherwise. The caller blacklists it.
    * @param robotP Current robot pose
+   * @param used_one_turn Whether frontier path lengths come from the one-turn recovery
    * @return true if a valid next frontier was found, false otherwise
    */
   bool getNextGoal(
     std::vector<FrontierPtr> & frontier_list, FrontierPtr & nextFrontier,
-    geometry_msgs::msg::PoseStamped & robotP);
-  bool getNextGoal(
-    std::vector<FrontierPtr> & frontier_list, FrontierPtr & nextFrontier,
-    geometry_msgs::msg::PoseStamped & robotP, bool used_one_turn);
+    FrontierPtr & abandonedFrontier, geometry_msgs::msg::PoseStamped & robotP,
+    bool used_one_turn);
+
+  /**
+   * @brief Ends the commitment to the current exploration goal
+   */
+  void clearGoal()
+  {
+    goal_commitment_.clear();
+  }
 
   /**
    * @brief Clears the cached path distances between frontier pairs
@@ -164,6 +174,8 @@ private:
 
   double calculatePathLength(std::vector<FrontierPtr> & path);
 
+  GoalCommitment::Settings commitmentSettings() const;
+
   void getFilteredFrontiers(
     std::vector<FrontierPtr> & frontier_list,
     SortedFrontiers & sortedFrontiers,
@@ -190,14 +202,8 @@ private:
   bool add_yaw_to_tsp = false;
   bool add_distance_to_robot_to_tsp = false;
 
-  // Goal hysteresis variables to prevent frequent goal switching
-  FrontierPtr current_committed_goal_;  // The goal we're currently committed to
-  double current_goal_path_cost_;       // Path cost to the current goal
-  bool has_committed_goal_ = false;     // Whether we have a committed goal
-  
-  // Hysteresis parameters
-  double goal_hysteresis_threshold_ = 0.15;  // New goal must be 15% better to switch
-  
+  GoalCommitment goal_commitment_;
+
   // Constants for path optimization
   static constexpr double PATH_NOT_FOUND_PENALTY_MULTIPLIER = 100000.0;
   static constexpr double YAW_COST_WEIGHT = 2.3;
