@@ -323,6 +323,8 @@ void RoadmapExplorationBT::halt()
 {
   LOG_INFO("RoadmapExplorationBT::halt()");
   behaviour_tree.haltTree();
+  // A continued session starts its goal and progress clock afresh.
+  full_path_optimizer_->clearGoal();
   if(sensor_simulator_)
   {
     sensor_simulator_->stopMapping();

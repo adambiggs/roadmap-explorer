@@ -128,7 +128,8 @@ add_library(${PROJECT_NAME}_core SHARED
 src/CostAssigner.cpp
 src/Parameters.cpp
 src/Nav2Interface.cpp 
-src/FullPathOptimizer.cpp 
+src/FullPathOptimizer.cpp
+src/GoalCommitment.cpp
 src/SensorSimulator.cpp
 )
 ament_target_dependencies(${PROJECT_NAME}_core ${dependencies})
