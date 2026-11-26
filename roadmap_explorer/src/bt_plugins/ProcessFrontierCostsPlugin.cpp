@@ -101,6 +101,7 @@ namespace roadmap_explorer
             "error_code_id", ExplorationErrorCode::NO_ACHIEVABLE_FRONTIERS_LEFT);
         return BT::NodeStatus::FAILURE;
         }
+        config().blackboard->set("achievable_frontier_found", true);
         setOutput("frontier_costs_result", frontierCostsRequestPtr->frontier_list);
         EventLoggerInstance.endEvent("ProcessFrontierCosts", 0);
         rosVisualizerInstance.visualizeFrontierMarkers("frontier_cell_markers", frontierCostsRequestPtr->frontier_list);

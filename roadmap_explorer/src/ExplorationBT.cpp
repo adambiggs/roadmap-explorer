@@ -52,6 +52,8 @@ RoadmapExplorationBT::RoadmapExplorationBT(std::shared_ptr<nav2_util::LifecycleN
 
   blackboard = BT::Blackboard::create();
   blackboard->set<ExplorationErrorCode>("error_code_id", ExplorationErrorCode::NO_ERROR);
+  // ProcessFrontierCosts sets it when a tick scores an achievable frontier.
+  blackboard->set<bool>("achievable_frontier_found", false);
 
   EventLogger::createInstance();
   ParameterHandler::createInstance();
@@ -261,6 +263,7 @@ uint16_t RoadmapExplorationBT::tickOnceWithSleep(const std::function<bool()> & c
     return ExploreActionResult::NO_ERROR;
   }
 
+  blackboard->set<bool>("achievable_frontier_found", false);
 #ifdef ROS_DISTRO_HUMBLE
   auto status = behaviour_tree.tickRoot();
 #elif ROS_DISTRO_JAZZY || ROS_DISTRO_KILTED
@@ -270,6 +273,10 @@ uint16_t RoadmapExplorationBT::tickOnceWithSleep(const std::function<bool()> & c
 #endif
 
   const auto plan_failures = frontierRoadmapInstance.takePlanFailures();
+  // The root also returns RUNNING from nodes before frontier scoring, such as the bootstrap walk.
+  if (unreachable_episode_active_ && blackboard->get<bool>("achievable_frontier_found")) {
+    endUnreachableEpisode("Found an achievable frontier");
+  }
   uint16_t return_value = ExploreActionResult::NO_ERROR;
   if (status == BT::NodeStatus::FAILURE) {
     if (blackboard->get<ExplorationErrorCode>("error_code_id") ==
@@ -339,9 +346,6 @@ uint16_t RoadmapExplorationBT::tickOnceWithSleep(const std::function<bool()> & c
   }
   else
   {
-    if (unreachable_episode_active_) {
-      endUnreachableEpisode("Found an achievable frontier");
-    }
     resetFrontierSearchDistance();
   }
   LOG_DEBUG("TICKED ONCE");
