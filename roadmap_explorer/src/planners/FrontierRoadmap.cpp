@@ -330,7 +330,9 @@ void FrontierRoadMap::constructNewEdges(const std::vector<FrontierPtr> & frontie
   for (const auto & point : frontiers) {
     closestNodes.clear();
     FrontierPtr closestFrontier;
-    getClosestNodeInHashmap(point, closestFrontier);
+    if (!getClosestNodeInHashmap(point, closestFrontier)) {
+      continue;
+    }
     // Ensure the closestFrontier is added if not already present
     if (roadmap_.find(closestFrontier) == roadmap_.end()) {
       roadmap_mutex_.lock();
@@ -525,12 +527,12 @@ void FrontierRoadMap::getNodesWithinRadius(
   }
 }
 
-void FrontierRoadMap::getClosestNodeInHashmap(
+bool FrontierRoadMap::getClosestNodeInHashmap(
   const FrontierPtr & interestNode,
   FrontierPtr & closestNode)
 {
   std::lock_guard<std::mutex> lock(spatial_hash_map_mutex_);
-  getClosestEligibleNode(
+  return getClosestEligibleNode(
     interestNode, closestNode, [](const FrontierPtr &) {return true;}, "hashmap");
 }
 

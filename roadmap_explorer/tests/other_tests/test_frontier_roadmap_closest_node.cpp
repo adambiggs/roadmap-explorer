@@ -105,5 +105,20 @@ TEST_F(FrontierRoadmapClosestNodeTest, PlanFailsWhenNoNodeIsWithinTenMetres)
 
   EXPECT_FALSE(graph.getPlan(0.0, 0.0, true, 10.1, 10.1, true, false).path_exists);
 }
+
+TEST_F(FrontierRoadmapClosestNodeTest, RobotPoseWithNoNodeWithinTenMetresGetsNoEdges)
+{
+  // The lone node's hash cell (20, 0) is inside the 10 m ring search around the robot, but the
+  // node is 10.1 m away.
+  auto lone = frontier(10.1, 0.0);
+  auto & graph = FrontierRoadMap::getInstance();
+  graph.addNodes({lone}, false);
+  graph.constructNewEdges({lone});
+  geometry_msgs::msg::Pose robot;
+
+  graph.constructNewEdgeRobotPose(robot);
+
+  EXPECT_FALSE(graph.getPlan(0.0, 0.0, true, 10.1, 0.0, true, false).path_exists);
+}
 }  // namespace
 }  // namespace roadmap_explorer

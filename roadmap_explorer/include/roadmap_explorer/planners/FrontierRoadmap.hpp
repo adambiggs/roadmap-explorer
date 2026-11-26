@@ -165,7 +165,8 @@ private:
     const geometry_msgs::msg::Point & interestPoint,
     std::vector<FrontierPtr> & closestNodeVector, const double radius);
 
-  void getClosestNodeInHashmap(const FrontierPtr & interestNode, FrontierPtr & closestNode);
+  // Returns false, leaving closestNode unchanged, when no node is within 10 m.
+  bool getClosestNodeInHashmap(const FrontierPtr & interestNode, FrontierPtr & closestNode);
 
   // Returns false, leaving closestNode unchanged, when no roadmap node is within 10 m.
   bool getClosestNodeInRoadMap(const FrontierPtr & interestNode, FrontierPtr & closestNode);
