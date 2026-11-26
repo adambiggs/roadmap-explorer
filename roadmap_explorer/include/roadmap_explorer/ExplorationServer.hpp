@@ -90,7 +90,7 @@ protected:
   std::shared_ptr<RoadmapExplorationBT> exploration_bt_;
   std::mutex exploration_bt_mutex_;
   bool server_active_{false};
-  // Set when a goal is accepted and cleared once that goal is terminal: one parent owns the tree.
+  // Set when a goal's execution starts and cleared once that goal is terminal: one parent owns the tree.
   // session_mutex_ guards it, and is held across the terminal transition.
   std::mutex session_mutex_;
   bool session_owned_{false};

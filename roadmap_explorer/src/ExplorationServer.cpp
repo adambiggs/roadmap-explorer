@@ -135,7 +135,6 @@ rclcpp_action::GoalResponse ExplorationServer::handle_goal(
     LOG_WARN("Received goal while another goal owns the exploration session -> rejecting");
     return rclcpp_action::GoalResponse::REJECT;
   }
-  session_owned_ = true;
   LOG_INFO("Accepted new ExploreArea goal");
   return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
 }
@@ -157,8 +156,13 @@ rclcpp_action::CancelResponse ExplorationServer::handle_cancel(
 void ExplorationServer::handle_accepted(
   const std::shared_ptr<GoalHandleExplore> goal_handle)
 {
-  (void)goal_handle;
   LOG_INFO("Goal accepted, starting execution");
+  {
+    // Claimed here, not in handle_goal: a goal whose response fails to send never gets here.
+    // The mutually exclusive action callback group finishes one goal's admission before the next.
+    std::lock_guard<std::mutex> lock(session_mutex_);
+    session_owned_ = true;
+  }
   // Spin the work off to a new thread so we don’t block the executor
   std::thread{std::bind(&ExplorationServer::execute, this, goal_handle)}.detach();
 }
