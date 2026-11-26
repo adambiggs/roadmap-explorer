@@ -42,8 +42,10 @@ roadmap_explorer_node:
       add_yaw_to_tsp: false
       add_distance_to_robot_to_tsp: false
       goal_match_radius: 1.0  # A frontier within this distance of the committed goal continues it, and of a blacklisted frontier is blacklisted
-      goal_stuck_timeout: 30.0  # Give up the committed goal after this many seconds without getting goal_min_progress closer
+      goal_stuck_timeout: 30.0  # Set the committed goal aside after this many seconds without getting goal_min_progress closer
       goal_min_progress: 0.25  # Metres closer to the committed goal that count as progress
+      goal_retry_cooldown: 300.0  # Seconds a goal given up for lack of progress waits before it can be chosen again, unless no other frontier is left
+      goal_max_attempts: 3  # Blacklist a goal for good when it is given up this many times
 
     explorationBT:
       bt_sleep_ms: 70

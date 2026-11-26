@@ -115,6 +115,14 @@ void ParameterHandler::makeParameters(std::shared_ptr<nav2_util::LifecycleNode> 
     node,
     "fullPathOptimizer.goal_min_progress", rclcpp::ParameterValue(
       0.25));
+  nav2_util::declare_parameter_if_not_declared(
+    node,
+    "fullPathOptimizer.goal_retry_cooldown", rclcpp::ParameterValue(
+      300.0));
+  nav2_util::declare_parameter_if_not_declared(
+    node,
+    "fullPathOptimizer.goal_max_attempts", rclcpp::ParameterValue(
+      3));
 
   parameter_map_["fullPathOptimizer.num_frontiers_in_local_area"] = node->get_parameter(
     "fullPathOptimizer.num_frontiers_in_local_area").as_double();
@@ -125,10 +133,13 @@ void ParameterHandler::makeParameters(std::shared_ptr<nav2_util::LifecycleNode> 
   parameter_map_["fullPathOptimizer.add_distance_to_robot_to_tsp"] = node->get_parameter(
     "fullPathOptimizer.add_distance_to_robot_to_tsp").as_bool();
   for (const auto * name : {"fullPathOptimizer.goal_match_radius",
-      "fullPathOptimizer.goal_stuck_timeout", "fullPathOptimizer.goal_min_progress"})
+      "fullPathOptimizer.goal_stuck_timeout", "fullPathOptimizer.goal_min_progress",
+      "fullPathOptimizer.goal_retry_cooldown"})
   {
     parameter_map_[name] = node->get_parameter(name).as_double();
   }
+  parameter_map_["fullPathOptimizer.goal_max_attempts"] = node->get_parameter(
+    "fullPathOptimizer.goal_max_attempts").as_int();
 
   // --- explorationBT ---
   nav2_util::declare_parameter_if_not_declared(

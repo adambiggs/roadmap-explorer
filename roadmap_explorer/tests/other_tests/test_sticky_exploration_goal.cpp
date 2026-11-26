@@ -121,22 +121,44 @@ TEST_F(StickyExplorationGoalTest, ChoosesANewGoalWhenTheCommittedFrontierIsGone)
   EXPECT_FALSE(east(next(search(2))));
 }
 
-TEST_F(StickyExplorationGoalTest, GivesUpAGoalWithNoProgressAfterTheStuckTimeout)
+TEST_F(StickyExplorationGoalTest, SetsAsideAGoalWithNoProgressAndRetriesItAfterTheCooldown)
 {
   parameterInstance.setValue("fullPathOptimizer.goal_stuck_timeout", 0.2);
+  parameterInstance.setValue("fullPathOptimizer.goal_retry_cooldown", 0.5);
   ASSERT_TRUE(east(next(search(0))));
-  FrontierPtr abandoned;
-  EXPECT_TRUE(east(next(search(1), &abandoned)));
-  EXPECT_FALSE(abandoned);
+  EXPECT_TRUE(east(next(search(1))));
 
   std::this_thread::sleep_for(250ms);
   const auto frontiers = search(2);
-  const auto goal = next(frontiers, &abandoned);
-  EXPECT_FALSE(east(goal));
+  EXPECT_FALSE(east(next(frontiers)));
+  EXPECT_TRUE(frontiers.front()->isBlacklisted());
+  // Still cooling down: the west goal is kept while it lasts.
+  EXPECT_FALSE(east(next(search(3))));
+
+  // Once the cooldown ends the east frontier competes again, and beats a
+  // third one when the west goal is gone.
+  std::this_thread::sleep_for(600ms);
+  auto explored = search(4);
+  explored.back()->setAchievability(false);
+  explored.push_back(frontier(10.0, 13.0, 3.6));
+  EXPECT_TRUE(east(next(explored)));
+}
+
+TEST_F(StickyExplorationGoalTest, BlacklistsAGoalOnItsLastAttempt)
+{
+  parameterInstance.setValue("fullPathOptimizer.goal_stuck_timeout", 0.2);
+  parameterInstance.setValue("fullPathOptimizer.goal_max_attempts", int64_t{1});
+  ASSERT_TRUE(east(next(search(0))));
+
+  std::this_thread::sleep_for(250ms);
+  const auto frontiers = search(1);
+  FrontierPtr abandoned;
+  EXPECT_FALSE(east(next(frontiers, &abandoned)));
   ASSERT_TRUE(abandoned);
   EXPECT_TRUE(east(abandoned));
   EXPECT_TRUE(frontiers.front()->isBlacklisted());
 }
+
 TEST_F(StickyExplorationGoalTest, BlacklistCoversTheFrontierAfterItsPointMoves)
 {
   node_->declare_parameter(

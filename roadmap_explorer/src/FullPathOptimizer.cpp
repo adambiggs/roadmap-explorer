@@ -401,7 +401,9 @@ bool FullPathOptimizer::getNextGoal(
   const GoalCommitment::Settings commitment_settings{
     parameterInstance.getValue<double>("fullPathOptimizer.goal_match_radius"),
     parameterInstance.getValue<double>("fullPathOptimizer.goal_stuck_timeout"),
-    parameterInstance.getValue<double>("fullPathOptimizer.goal_min_progress")};
+    parameterInstance.getValue<double>("fullPathOptimizer.goal_min_progress"),
+    parameterInstance.getValue<double>("fullPathOptimizer.goal_retry_cooldown"),
+    parameterInstance.getValue<int64_t>("fullPathOptimizer.goal_max_attempts")};
 
   FrontierPtr robotPoseFrontier = std::make_shared<Frontier>();
   robotPoseFrontier->setGoalPoint(robotP.pose.position.x, robotP.pose.position.y);
@@ -415,6 +417,7 @@ bool FullPathOptimizer::getNextGoal(
   // Stay with the committed goal while it lasts. Comparing it with better
   // candidates each search made the robot alternate between two frontiers.
   abandonedFrontier.reset();
+  goal_commitment_.holdBack(frontier_list, now, commitment_settings);
   const auto decision = goal_commitment_.keep(frontier_list, remaining, now, commitment_settings);
   switch (decision.outcome) {
     case GoalCommitment::Outcome::Kept:
@@ -426,10 +429,17 @@ bool FullPathOptimizer::getNextGoal(
         "Exploration goal " << decision.frontier <<
           " is no longer an achievable frontier. Choosing a new goal.");
       break;
-    case GoalCommitment::Outcome::Stuck:
+    case GoalCommitment::Outcome::SetAside:
       LOG_WARN(
         "No progress toward exploration goal " << decision.frontier << " for " <<
-          commitment_settings.stuck_timeout << " s. Blacklisting it and choosing a new goal.");
+          commitment_settings.stuck_timeout << " s. Setting it aside for " <<
+          commitment_settings.retry_cooldown << " s and choosing a new goal.");
+      goal_commitment_.holdBack(frontier_list, now, commitment_settings);
+      break;
+    case GoalCommitment::Outcome::GivenUp:
+      LOG_WARN(
+        "No progress toward exploration goal " << decision.frontier << " on attempt " <<
+          commitment_settings.max_attempts << ". Blacklisting it and choosing a new goal.");
       decision.frontier->setBlacklisted(true);
       abandonedFrontier = decision.frontier;
       break;

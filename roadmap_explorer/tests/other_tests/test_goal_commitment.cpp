@@ -13,7 +13,7 @@ namespace
 {
 using Outcome = GoalCommitment::Outcome;
 
-constexpr GoalCommitment::Settings kSettings{1.0, 30.0, 0.25};
+constexpr GoalCommitment::Settings kSettings{1.0, 30.0, 0.25, 300.0, 3};
 
 FrontierPtr frontier(double x, double y)
 {
@@ -110,7 +110,7 @@ TEST_F(GoalCommitmentTest, GivesUpAfterTheStuckTimeoutWithoutProgress)
   EXPECT_EQ(keep({goal}, 29.9).outcome, Outcome::Kept);
 
   const auto decision = keep({goal}, 30.0);
-  EXPECT_EQ(decision.outcome, Outcome::Stuck);
+  EXPECT_EQ(decision.outcome, Outcome::SetAside);
   EXPECT_EQ(decision.frontier, goal);
   EXPECT_EQ(keep({goal}, 31.0).outcome, Outcome::None);
 }
@@ -122,18 +122,70 @@ TEST_F(GoalCommitmentTest, ProgressRestartsTheStuckTimer)
   remaining_[goal] = 4.7;
   EXPECT_EQ(keep({goal}, 25.0).outcome, Outcome::Kept);
   EXPECT_EQ(keep({goal}, 54.9).outcome, Outcome::Kept);
-  EXPECT_EQ(keep({goal}, 55.0).outcome, Outcome::Stuck);
+  EXPECT_EQ(keep({goal}, 55.0).outcome, Outcome::SetAside);
 }
 
 TEST_F(GoalCommitmentTest, RefusesSettingsThatAreNotPositive)
 {
   const auto remaining = [](const FrontierPtr &) {return 1.0;};
-  for (const auto settings : {GoalCommitment::Settings{0.0, 30.0, 0.25},
-      GoalCommitment::Settings{1.0, -1.0, 0.25},
-      GoalCommitment::Settings{1.0, 30.0, std::numeric_limits<double>::quiet_NaN()}})
+  for (const auto settings : {GoalCommitment::Settings{0.0, 30.0, 0.25, 300.0, 3},
+      GoalCommitment::Settings{1.0, -1.0, 0.25, 300.0, 3},
+      GoalCommitment::Settings{1.0, 30.0, std::numeric_limits<double>::quiet_NaN(), 300.0, 3},
+      GoalCommitment::Settings{1.0, 30.0, 0.25, 0.0, 3},
+      GoalCommitment::Settings{1.0, 30.0, 0.25, 300.0, 0}})
   {
     EXPECT_THROW(commitment_.keep({}, remaining, 0.0, settings), std::invalid_argument);
+    EXPECT_THROW(commitment_.holdBack({}, 0.0, settings), std::invalid_argument);
   }
+}
+TEST_F(GoalCommitmentTest, HoldsBackASetAsideGoalUntilItsCooldownEnds)
+{
+  auto goal = frontier(5.0, 0.0);
+  commitment_.commit(goal, 5.0, 0.0);
+  remaining_[goal] = 5.0;
+  ASSERT_EQ(keep({goal}, 30.0).outcome, Outcome::SetAside);
+
+  auto again = frontier(5.2, 0.1);
+  auto other = frontier(-3.0, 0.0);
+  commitment_.holdBack({again, other}, 31.0, kSettings);
+  EXPECT_TRUE(again->isBlacklisted());
+  EXPECT_FALSE(other->isBlacklisted());
+
+  auto later = frontier(5.2, 0.1);
+  commitment_.holdBack({later, frontier(-3.0, 0.0)}, 330.0, kSettings);
+  EXPECT_FALSE(later->isBlacklisted());
+}
+
+TEST_F(GoalCommitmentTest, RetriesASetAsideGoalEarlyWhenNoOtherFrontierIsLeft)
+{
+  auto goal = frontier(5.0, 0.0);
+  commitment_.commit(goal, 5.0, 0.0);
+  remaining_[goal] = 5.0;
+  ASSERT_EQ(keep({goal}, 30.0).outcome, Outcome::SetAside);
+
+  auto again = frontier(5.2, 0.1);
+  auto unreachable = frontier(-3.0, 0.0);
+  unreachable->setAchievability(false);
+  commitment_.holdBack({again, unreachable}, 31.0, kSettings);
+  EXPECT_FALSE(again->isBlacklisted());
+}
+
+TEST_F(GoalCommitmentTest, GivesUpForGoodOnTheLastAttempt)
+{
+  const Outcome expected[] = {Outcome::SetAside, Outcome::SetAside, Outcome::GivenUp};
+  for (int attempt = 0; attempt < 3; ++attempt) {
+    const double start = 1000.0 * attempt;
+    auto goal = frontier(5.0 + 0.1 * attempt, 0.0);
+    commitment_.commit(goal, 5.0, start);
+    remaining_[goal] = 5.0;
+    const auto decision = keep({goal}, start + 30.0);
+    EXPECT_EQ(decision.outcome, expected[attempt]) << attempt;
+    EXPECT_EQ(decision.frontier, goal);
+  }
+  // Giving up for good leaves the blacklist to exclude it.
+  auto again = frontier(5.0, 0.0);
+  commitment_.holdBack({again, frontier(-3.0, 0.0)}, 2031.0, kSettings);
+  EXPECT_FALSE(again->isBlacklisted());
 }
 }  // namespace
 }  // namespace roadmap_explorer
