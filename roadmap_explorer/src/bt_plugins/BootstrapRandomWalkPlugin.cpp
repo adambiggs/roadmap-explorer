@@ -23,6 +23,7 @@
 #include "roadmap_explorer/Parameters.hpp"
 #include <nav2_util/node_utils.hpp>
 #include <pluginlib/class_list_macros.hpp>
+#include <mutex>
 #include <random>
 
 namespace roadmap_explorer
@@ -96,7 +97,6 @@ public:
         forward_duration_ = ros_node_ptr_->get_parameter("bootstrap.forward_duration").as_double();
         
         // Initialize state
-        last_scan_ = nullptr;
         bootstrap_start_time_ = rclcpp::Time(0);
         state_ = State::IDLE;
         state_start_time_ = rclcpp::Time(0);
@@ -207,6 +207,7 @@ private:
     
     void laserScanCallback(const sensor_msgs::msg::LaserScan::SharedPtr msg)
     {
+        std::lock_guard<std::mutex> lock(scan_mutex_);
         last_scan_ = msg;
     }
     
@@ -244,7 +245,14 @@ private:
     
     bool isSafeToMoveForward()
     {
-        if (!last_scan_) {
+        // The scan callback runs on the executor while the tree ticks on another thread:
+        // decide from one scan.
+        sensor_msgs::msg::LaserScan::SharedPtr scan;
+        {
+            std::lock_guard<std::mutex> lock(scan_mutex_);
+            scan = last_scan_;
+        }
+        if (!scan) {
             LOG_WARN("Bootstrap mode: No laser scan data available, stopping");
             return false;
         }
@@ -254,12 +262,12 @@ private:
         float min_distance = std::numeric_limits<float>::max();
         int obstacles_detected = 0;
         
-        for (size_t i = 0; i < last_scan_->ranges.size(); ++i) {
-            float angle = last_scan_->angle_min + i * last_scan_->angle_increment;
+        for (size_t i = 0; i < scan->ranges.size(); ++i) {
+            float angle = scan->angle_min + i * scan->angle_increment;
             
             // Check if within front arc
             if (std::abs(angle) <= front_arc_rad) {
-                float range = last_scan_->ranges[i];
+                float range = scan->ranges[i];
                 
                 // Skip invalid readings
                 if (std::isnan(range) || std::isinf(range)) {
@@ -267,7 +275,7 @@ private:
                 }
                 
                 // Check if within min/max range
-                if (range < last_scan_->range_min || range > last_scan_->range_max) {
+                if (range < scan->range_min || range > scan->range_max) {
                     continue;
                 }
                 
@@ -376,6 +384,7 @@ private:
     rclcpp_lifecycle::LifecyclePublisher<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_pub_;
     rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr scan_sub_;
     
+    std::mutex scan_mutex_;
     sensor_msgs::msg::LaserScan::SharedPtr last_scan_;
     
     // Parameters
