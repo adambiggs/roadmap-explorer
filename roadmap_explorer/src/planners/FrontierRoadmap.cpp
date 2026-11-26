@@ -534,12 +534,12 @@ void FrontierRoadMap::getClosestNodeInHashmap(
     interestNode, closestNode, [](const FrontierPtr &) {return true;}, "hashmap");
 }
 
-void FrontierRoadMap::getClosestNodeInRoadMap(
+bool FrontierRoadMap::getClosestNodeInRoadMap(
   const FrontierPtr & interestNode,
   FrontierPtr & closestNode)
 {
   std::lock_guard<std::mutex> lock(spatial_hash_map_mutex_);
-  getClosestEligibleNode(
+  return getClosestEligibleNode(
     interestNode, closestNode,
     [this](const FrontierPtr & frontier) {
       std::lock_guard<std::mutex> roadmap_lock(roadmap_mutex_);
@@ -547,7 +547,7 @@ void FrontierRoadMap::getClosestNodeInRoadMap(
     }, "roadmap");
 }
 
-void FrontierRoadMap::getClosestEligibleNode(
+bool FrontierRoadMap::getClosestEligibleNode(
   const FrontierPtr & interestNode, FrontierPtr & closestNode,
   const std::function<bool(const FrontierPtr &)> & eligible, const std::string & map_name)
 {
@@ -560,13 +560,13 @@ void FrontierRoadMap::getClosestEligibleNode(
     // this ring or beyond is at least (ring - 1) * GRID_CELL_SIZE away.
     const double unvisited_distance = (ring - 1) * GRID_CELL_SIZE;
     if (foundClosestNode && min_distance <= unvisited_distance) {
-      return;
+      return true;
     }
     if (unvisited_distance > max_search_distance_m) {
       if (!foundClosestNode) {
         LOG_CRITICAL("Cannot find closest node within 10m in " << map_name << ". This is not ok.");
       }
-      return;
+      return foundClosestNode;
     }
     for (int dx = -ring; dx <= ring; ++dx) {
       for (int dy = -ring; dy <= ring; ++dy) {
@@ -583,7 +583,7 @@ void FrontierRoadMap::getClosestEligibleNode(
             continue;
           }
           double distance = distanceBetweenFrontiers(interestNode, existing_frontier);
-          if (distance < min_distance) {
+          if (distance <= max_search_distance_m && distance < min_distance) {
             foundClosestNode = true;
             min_distance = distance;
             closestNode = existing_frontier;
@@ -592,6 +592,7 @@ void FrontierRoadMap::getClosestEligibleNode(
       }
     }
   }
+  return foundClosestNode;
 }
 
 RoadmapPlanResult FrontierRoadMap::getPlan(
@@ -606,7 +607,7 @@ RoadmapPlanResult FrontierRoadMap::getPlan(
   double ye, bool useClosestToEnd, bool publish_plan,
     std::pair<FrontierPtr, FrontierPtr> * disconnected)
 {
-  RoadmapPlanResult planResult;
+  RoadmapPlanResult planResult{};
   if (xs == xe && ys == ye) {
     planResult.path_exists = true;
     planResult.path_length_m = 0.0;
@@ -617,6 +618,7 @@ RoadmapPlanResult FrontierRoadMap::getPlan(
   start->setGoalPoint(xs, ys);
   start->setUID(generateUID(start));
   FrontierPtr start_closest = std::make_shared<Frontier>();
+  bool endpoints_found = true;
   {
     if (!useClosestToStart) {
       if (roadmap_.count(start) == 0) {
@@ -628,7 +630,7 @@ RoadmapPlanResult FrontierRoadMap::getPlan(
         LOG_INFO("Start node: " << xs << ", " << ys << " already in the roadmap");
       }
     } else {
-      getClosestNodeInRoadMap(start, start_closest);
+      endpoints_found = getClosestNodeInRoadMap(start, start_closest);
     }
   }
 
@@ -647,16 +649,18 @@ RoadmapPlanResult FrontierRoadMap::getPlan(
         LOG_INFO("End node: " << xe << ", " << ye << " already in the roadmap");
       }
     } else {
-      getClosestNodeInRoadMap(goal, goal_closest);
+      endpoints_found = getClosestNodeInRoadMap(goal, goal_closest) && endpoints_found;
     }
   }
 
   roadmap_mutex_.lock();
   LOG_DEBUG("Getting path from: " << start << " to " << goal);
   LOG_DEBUG("In turn calculating from:" << start_closest << " to " << goal_closest);
-  auto aStarResult = astar_planner_->getPlan(start_closest, goal_closest, roadmap_);
-  planResult.path = aStarResult.first;
-  planResult.path_length_m = aStarResult.second;
+  if (endpoints_found) {
+    auto aStarResult = astar_planner_->getPlan(start_closest, goal_closest, roadmap_);
+    planResult.path = aStarResult.first;
+    planResult.path_length_m = aStarResult.second;
+  }
   planResult.path_exists = true;
   if (planResult.path.size() == 0) {
     LOG_DEBUG("Could not compute path from: " << xs << ", " << ys << " to " << xe << ", " << ye);
@@ -668,7 +672,7 @@ RoadmapPlanResult FrontierRoadMap::getPlan(
       plan_failures_.first_target.y = ye;
     }
     ++plan_failures_.count;
-    if (disconnected) {
+    if (disconnected && endpoints_found) {
       *disconnected = {start_closest, goal_closest};
     }
     roadmap_mutex_.unlock();

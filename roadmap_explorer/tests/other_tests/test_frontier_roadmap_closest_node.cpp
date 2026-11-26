@@ -93,5 +93,17 @@ TEST_F(FrontierRoadmapClosestNodeTest, PlanStartsFromAdjacentCellNodeWhenQueryIs
   ASSERT_FALSE(plan.path.empty());
   EXPECT_EQ(plan.path.front()->frontier, next_cell);
 }
+
+TEST_F(FrontierRoadmapClosestNodeTest, PlanFailsWhenNoNodeIsWithinTenMetres)
+{
+  // The lone node's hash cell (20, 20) is inside the 10 m ring search around the origin, but
+  // the node is 14.3 m from it.
+  auto lone = frontier(10.1, 10.1);
+  auto & graph = FrontierRoadMap::getInstance();
+  graph.addNodes({lone}, false);
+  graph.constructNewEdges({lone});
+
+  EXPECT_FALSE(graph.getPlan(0.0, 0.0, true, 10.1, 10.1, true, false).path_exists);
+}
 }  // namespace
 }  // namespace roadmap_explorer
