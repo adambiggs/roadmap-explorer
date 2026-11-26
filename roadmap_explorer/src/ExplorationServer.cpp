@@ -130,11 +130,12 @@ rclcpp_action::GoalResponse ExplorationServer::handle_goal(
     LOG_WARN("Received goal while inactive -> rejecting");
     return rclcpp_action::GoalResponse::REJECT;
   }
-  bool owned = false;
-  if (!session_owned_.compare_exchange_strong(owned, true)) {
+  std::lock_guard<std::mutex> lock(session_mutex_);
+  if (session_owned_) {
     LOG_WARN("Received goal while another goal owns the exploration session -> rejecting");
     return rclcpp_action::GoalResponse::REJECT;
   }
+  session_owned_ = true;
   LOG_INFO("Accepted new ExploreArea goal");
   return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
 }
@@ -304,8 +305,8 @@ void ExplorationServer::terminateGoal(
       exploration_bt_->halt();
     }
   }
-  session_owned_ = false;
-
+  // A goal arriving now waits for this goal's terminal state before it can take the session.
+  std::lock_guard<std::mutex> lock(session_mutex_);
   switch (terminal_state) {
     case ActionTerminalState::SUCCEED:
       goal_handle->succeed(result);
@@ -317,6 +318,7 @@ void ExplorationServer::terminateGoal(
       goal_handle->canceled(result);
       break;
   }
+  session_owned_ = false;
 }
 
 void ExplorationServer::handle_save_map_and_roadmap(

@@ -22,7 +22,6 @@
 #ifndef ROADMAP_EXPLORER__EXPLORATION_SERVER_HPP_
 #define ROADMAP_EXPLORER__EXPLORATION_SERVER_HPP_
 
-#include <atomic>
 #include <memory>
 #include <string>
 #include <thread>
@@ -91,8 +90,10 @@ protected:
   std::shared_ptr<RoadmapExplorationBT> exploration_bt_;
   std::mutex exploration_bt_mutex_;
   bool server_active_{false};
-  // Set when a goal is accepted and cleared when that goal terminates: one parent owns the tree.
-  std::atomic<bool> session_owned_{false};
+  // Set when a goal is accepted and cleared once that goal is terminal: one parent owns the tree.
+  // session_mutex_ guards it, and is held across the terminal transition.
+  std::mutex session_mutex_;
+  bool session_owned_{false};
   bool localisation_only_mode_{false};
 
   rclcpp::executors::MultiThreadedExecutor::SharedPtr executor_;
