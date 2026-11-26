@@ -180,9 +180,14 @@ void ExplorationServer::execute(const std::shared_ptr<GoalHandleExplore> goal_ha
     switch (goal_handle->get_goal()->exploration_bringup_mode) {
       case ExploreAction::Goal::NEW_EXPLORATION_SESSION:
         {
-          std::lock_guard<std::mutex> lock(exploration_bt_mutex_);
-          exploration_bt_.reset();
-          if(!make_exploration_bt(localisation_only_mode_))
+          bool initialized;
+          {
+            std::lock_guard<std::mutex> lock(exploration_bt_mutex_);
+            exploration_bt_.reset();
+            initialized = make_exploration_bt(localisation_only_mode_);
+          }
+          // terminateGoal takes exploration_bt_mutex_ itself.
+          if(!initialized)
           {
             result->success = false;
             terminateGoal(ActionTerminalState::ABORT, goal_handle, result);
@@ -206,15 +211,22 @@ void ExplorationServer::execute(const std::shared_ptr<GoalHandleExplore> goal_ha
         // throw RoadmapExplorerException("Continue from saved session is not implemented yet.");
         if(localisation_only_mode_)
         {
-          std::lock_guard<std::mutex> lock(exploration_bt_mutex_);
-          exploration_bt_.reset();
-          if(!make_exploration_bt(localisation_only_mode_))
+          bool initialized;
+          {
+            std::lock_guard<std::mutex> lock(exploration_bt_mutex_);
+            exploration_bt_.reset();
+            initialized = make_exploration_bt(localisation_only_mode_);
+            if(initialized)
+            {
+              exploration_bt_->loadExplorationMetaData(goal_handle->get_goal()->session_name.data, goal_handle->get_goal()->load_from_folder.data);
+            }
+          }
+          if(!initialized)
           {
             result->success = false;
             terminateGoal(ActionTerminalState::ABORT, goal_handle, result);
             return;
           }
-          exploration_bt_->loadExplorationMetaData(goal_handle->get_goal()->session_name.data, goal_handle->get_goal()->load_from_folder.data);
         }
         else
         {
