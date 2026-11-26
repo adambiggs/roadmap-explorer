@@ -97,11 +97,6 @@ void CountBasedGain::setInformationGainForFrontier(
   std::vector<int> information_along_ray;         // stores the information along each ray in 2PI.
   std::vector<geometry_msgs::msg::Pose> vizpoints;
   float hitObstacleCount = 0;
-  const double half_cell = 0.5 * exploration_costmap_->getResolution();
-  const double max_ray_x =
-    exploration_costmap_->getOriginX() + exploration_costmap_->getSizeInMetersX() - half_cell;
-  const double max_ray_y =
-    exploration_costmap_->getOriginY() + exploration_costmap_->getSizeInMetersY() - half_cell;
   for (double theta = 0; theta <= (2 * M_PI); theta += DELTA_THETA) {
     std::vector<nav2_costmap_2d::MapLocation> traced_cells;
     // treats cells 240 to 254 as obstacles and returns 255 in the traced cells.
@@ -112,7 +107,6 @@ void CountBasedGain::setInformationGainForFrontier(
 
     // Check if wx and wy are outside the polygon. If they are, bring it to the edge of the polygon.
     // This is to prevent raytracing beyond the edge of the boundary polygon.
-    // The costmap's far edge belongs to no cell, so the ray stops at the centre of the last one.
     wx =
       std::max(
       polygon_xy_min_max[0],
@@ -121,7 +115,7 @@ void CountBasedGain::setInformationGainForFrontier(
         std::min(
           polygon_xy_min_max[2],
           std::min(
-            max_ray_x, wx))));
+            exploration_costmap_->getOriginX() + exploration_costmap_->getSizeInMetersX(), wx))));
     wy =
       std::max(
       polygon_xy_min_max[1],
@@ -130,7 +124,7 @@ void CountBasedGain::setInformationGainForFrontier(
         std::min(
           polygon_xy_min_max[3],
           std::min(
-            max_ray_y, wy))));
+            exploration_costmap_->getOriginY() + exploration_costmap_->getSizeInMetersY(), wy))));
 
     if (!getTracedCells(sx, sy, wx, wy, cell_gatherer, max_length, exploration_costmap_)) {
       frontier->setArrivalInformation(0.0);
