@@ -110,6 +110,13 @@ private:
 
   std::shared_ptr<pluginlib::ClassLoader<FrontierSearchBase>> frontier_search_loader_;
   std::shared_ptr<pluginlib::ClassLoader<roadmap_explorer::BTPlugin>> bt_plugin_loader_;
+
+  // Consecutive searches with no achievable frontier, logged once when they start and once
+  // when a frontier becomes reachable or exploration stops.
+  void endUnreachableEpisode(const std::string & outcome);
+  bool unreachable_episode_active_ = false;
+  std::size_t unreachable_searches_ = 0;
+  std::size_t unreachable_failed_plans_ = 0;
 };
 }
 

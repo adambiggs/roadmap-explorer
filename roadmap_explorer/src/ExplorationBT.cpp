@@ -104,13 +104,24 @@ bool RoadmapExplorationBT::incrementFrontierSearchDistance()
 {
   auto current_frontier_search_distance = blackboard->get<double>("current_frontier_search_distance");
   double increment_value = parameterInstance.getValue<double>("frontierSearch.increment_search_distance_by");
-  LOG_WARN("Incrementing frontier search distance by " << increment_value);
+  LOG_DEBUG("Incrementing frontier search distance by " << increment_value);
   auto distance_to_set = current_frontier_search_distance + increment_value;
   if (distance_to_set > parameterInstance.getValue<double>("frontierSearch.max_permissable_frontier_search_distance")) {
     return false;
   }
   blackboard->set<double>("current_frontier_search_distance", distance_to_set);
   return true;
+}
+
+void RoadmapExplorationBT::endUnreachableEpisode(const std::string & outcome)
+{
+  LOG_WARN(
+    outcome << " after " << unreachable_searches_ << " searches with no achievable frontier and " <<
+      unreachable_failed_plans_ << " failed candidate paths; the search distance reached " <<
+      blackboard->get<double>("current_frontier_search_distance") << " m.");
+  unreachable_episode_active_ = false;
+  unreachable_searches_ = 0;
+  unreachable_failed_plans_ = 0;
 }
 
 bool RoadmapExplorationBT::resetFrontierSearchDistance()
@@ -258,6 +269,7 @@ uint16_t RoadmapExplorationBT::tickOnceWithSleep(const std::function<bool()> & c
   #error Unsupported ROS DISTRO
 #endif
 
+  const auto plan_failures = frontierRoadmapInstance.takePlanFailures();
   uint16_t return_value = ExploreActionResult::NO_ERROR;
   if (status == BT::NodeStatus::FAILURE) {
     if (blackboard->get<ExplorationErrorCode>("error_code_id") ==
@@ -277,7 +289,18 @@ uint16_t RoadmapExplorationBT::tickOnceWithSleep(const std::function<bool()> & c
     } else if (blackboard->get<ExplorationErrorCode>("error_code_id") ==
       ExplorationErrorCode::NO_ACHIEVABLE_FRONTIERS_LEFT)
     {
-      LOG_ERROR("Behavior Tree tick returned FAILURE due to no achievable frontiers left.");
+      if (!unreachable_episode_active_) {
+        unreachable_episode_active_ = true;
+        LOG_ERROR(
+          "No achievable frontiers within " <<
+            blackboard->get<double>("current_frontier_search_distance") << " m: " <<
+            plan_failures.count << " candidate paths failed, the first from (" <<
+            plan_failures.first_start.x << ", " << plan_failures.first_start.y << ") to (" <<
+            plan_failures.first_target.x << ", " << plan_failures.first_target.y <<
+            "). Widening the search until a frontier is reachable.");
+      }
+      ++unreachable_searches_;
+      unreachable_failed_plans_ += plan_failures.count;
       incrementFrontierSearchDistance();
     } else if (blackboard->get<ExplorationErrorCode>("error_code_id") ==
       ExplorationErrorCode::FULL_PATH_OPTIMIZATION_FAILURE)
@@ -312,6 +335,9 @@ uint16_t RoadmapExplorationBT::tickOnceWithSleep(const std::function<bool()> & c
   }
   else
   {
+    if (unreachable_episode_active_) {
+      endUnreachableEpisode("Found an achievable frontier");
+    }
     resetFrontierSearchDistance();
   }
   LOG_DEBUG("TICKED ONCE");
@@ -322,6 +348,9 @@ uint16_t RoadmapExplorationBT::tickOnceWithSleep(const std::function<bool()> & c
 void RoadmapExplorationBT::halt()
 {
   LOG_INFO("RoadmapExplorationBT::halt()");
+  if (unreachable_episode_active_) {
+    endUnreachableEpisode("Exploration stopped with no achievable frontier");
+  }
   behaviour_tree.haltTree();
   if(sensor_simulator_)
   {

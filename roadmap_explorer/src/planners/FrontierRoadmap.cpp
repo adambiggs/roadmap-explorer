@@ -659,8 +659,15 @@ RoadmapPlanResult FrontierRoadMap::getPlan(
   planResult.path_length_m = aStarResult.second;
   planResult.path_exists = true;
   if (planResult.path.size() == 0) {
-    LOG_WARN("Could not compute path from: " << xs << ", " << ys << " to " << xe << ", " << ye);
+    LOG_DEBUG("Could not compute path from: " << xs << ", " << ys << " to " << xe << ", " << ye);
     planResult.path_exists = false;
+    if (plan_failures_.count == 0) {
+      plan_failures_.first_start.x = xs;
+      plan_failures_.first_start.y = ys;
+      plan_failures_.first_target.x = xe;
+      plan_failures_.first_target.y = ye;
+    }
+    ++plan_failures_.count;
     if (disconnected) {
       *disconnected = {start_closest, goal_closest};
     }
@@ -678,6 +685,14 @@ RoadmapPlanResult FrontierRoadMap::getPlan(
     publishPlan(planResult.path, 1.0, 0.0, 0.0);
   }
   return planResult;
+}
+
+FrontierRoadMap::PlanFailures FrontierRoadMap::takePlanFailures()
+{
+  std::lock_guard<std::mutex> lock(roadmap_mutex_);
+  PlanFailures failures = plan_failures_;
+  plan_failures_ = PlanFailures();
+  return failures;
 }
 
 RoadmapPlanResult FrontierRoadMap::getPlan(

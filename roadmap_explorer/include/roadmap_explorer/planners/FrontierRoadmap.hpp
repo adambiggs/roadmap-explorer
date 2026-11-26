@@ -134,6 +134,16 @@ public:
 
   void loadRoadmapData(const std::string & base_path, const std::string & session_name);
 
+  struct PlanFailures
+  {
+    std::size_t count = 0;
+    geometry_msgs::msg::Point first_start;
+    geometry_msgs::msg::Point first_target;
+  };
+
+  // Returns the roadmap plans that failed since the previous call and starts a new count.
+  PlanFailures takePlanFailures();
+
 private:
   void mapDataCallback(const roadmap_explorer_msgs::msg::MapData & mapData);
 
@@ -202,6 +212,7 @@ private:
   std::shared_ptr<nav2_costmap_2d::Costmap2DROS> explore_costmap_ros_;
 
   std::mutex spatial_hash_map_mutex_;
+  PlanFailures plan_failures_;  // guarded by roadmap_mutex_
   std::unordered_map<std::pair<int, int>, std::vector<FrontierPtr>, spatialHash> spatial_hash_map_;
 
   std::queue<FrontierPtr> no_kf_parent_queue_;
