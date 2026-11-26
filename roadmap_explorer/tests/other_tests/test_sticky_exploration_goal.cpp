@@ -144,6 +144,24 @@ TEST_F(StickyExplorationGoalTest, SetsAsideAGoalWithNoProgressAndRetriesItAfterT
   EXPECT_TRUE(east(next(explored)));
 }
 
+TEST_F(StickyExplorationGoalTest, KeepsAnEarlyRetryWhenAnotherFrontierAppears)
+{
+  parameterInstance.setValue("fullPathOptimizer.goal_stuck_timeout", 0.2);
+  parameterInstance.setValue("fullPathOptimizer.goal_retry_cooldown", 60.0);
+  const auto eastOnly = [this](int cycle) {
+      auto frontiers = search(cycle);
+      frontiers.back()->setAchievability(false);
+      return frontiers;
+    };
+  ASSERT_TRUE(east(next(eastOnly(0))));
+
+  // Set aside with nothing else left, so it is retried at once.
+  std::this_thread::sleep_for(250ms);
+  ASSERT_TRUE(east(next(eastOnly(1))));
+  // The retry stays the goal although west appears during the cooldown.
+  EXPECT_TRUE(east(next(search(3))));
+}
+
 TEST_F(StickyExplorationGoalTest, BlacklistsAGoalOnItsLastAttempt)
 {
   parameterInstance.setValue("fullPathOptimizer.goal_stuck_timeout", 0.2);

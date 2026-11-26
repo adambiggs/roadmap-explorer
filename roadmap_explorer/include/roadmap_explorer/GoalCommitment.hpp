@@ -41,7 +41,8 @@ public:
     Kept,       // frontier continues the committed goal
     Lost,       // no achievable frontier is left at the committed goal
     SetAside,   // frontier is the committed goal, which made no progress in time
-    GivenUp,    // as SetAside, on the last allowed attempt
+    GivenUp,    // as SetAside, on the last allowed attempt; frontiers within
+                // match_radius of it are marked blacklisted
   };
 
   struct Decision
@@ -52,8 +53,12 @@ public:
 
   using Remaining = std::function<double(const FrontierPtr &)>;
 
+  // Throws RoadmapExplorerException naming the first invalid setting.
+  static void validate(const Settings & settings);
+
   // Marks the frontiers at goals set aside and still cooling down as
-  // blacklisted for this search, unless that would leave none.
+  // blacklisted for this search, unless that would leave none. Call it only
+  // when choosing a new goal, after keep.
   void holdBack(const std::vector<FrontierPtr> & frontiers, double now, const Settings & settings);
 
   // remaining gives the travel distance from the robot to a frontier, and
@@ -73,8 +78,6 @@ private:
     int64_t attempts;
     double until;
   };
-
-  static void validate(const Settings & settings);
 
   std::optional<geometry_msgs::msg::Point> anchor_;
   FrontierPtr last_;

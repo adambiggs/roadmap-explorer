@@ -40,6 +40,8 @@ FullPathOptimizer::FullPathOptimizer(
   add_distance_to_robot_to_tsp = parameterInstance.getValue<bool>(
     "fullPathOptimizer.add_distance_to_robot_to_tsp");
 
+  GoalCommitment::validate(commitmentSettings());
+
   explore_costmap_ros_ = explore_costmap_ros;
   local_search_area_publisher_ = node_->create_publisher<visualization_msgs::msg::MarkerArray>(
     "local_search_area", 10);
@@ -81,6 +83,16 @@ void FullPathOptimizer::addToMarkerArraySolidPolygon(
   marker.color.b = b;
   marker.lifetime = rclcpp::Duration::from_seconds(MARKER_LIFETIME_SECONDS);
   marker_array.markers.push_back(marker);
+}
+
+GoalCommitment::Settings FullPathOptimizer::commitmentSettings() const
+{
+  return {
+    parameterInstance.getValue<double>("fullPathOptimizer.goal_match_radius"),
+    parameterInstance.getValue<double>("fullPathOptimizer.goal_stuck_timeout"),
+    parameterInstance.getValue<double>("fullPathOptimizer.goal_min_progress"),
+    parameterInstance.getValue<double>("fullPathOptimizer.goal_retry_cooldown"),
+    parameterInstance.getValue<int64_t>("fullPathOptimizer.goal_max_attempts")};
 }
 
 double FullPathOptimizer::calculatePathLength(std::vector<FrontierPtr> & path)
@@ -398,31 +410,31 @@ bool FullPathOptimizer::getNextGoal(
   add_yaw_to_tsp = parameterInstance.getValue<bool>("fullPathOptimizer.add_yaw_to_tsp");
   add_distance_to_robot_to_tsp = parameterInstance.getValue<bool>(
     "fullPathOptimizer.add_distance_to_robot_to_tsp");
-  const GoalCommitment::Settings commitment_settings{
-    parameterInstance.getValue<double>("fullPathOptimizer.goal_match_radius"),
-    parameterInstance.getValue<double>("fullPathOptimizer.goal_stuck_timeout"),
-    parameterInstance.getValue<double>("fullPathOptimizer.goal_min_progress"),
-    parameterInstance.getValue<double>("fullPathOptimizer.goal_retry_cooldown"),
-    parameterInstance.getValue<int64_t>("fullPathOptimizer.goal_max_attempts")};
-
-  FrontierPtr robotPoseFrontier = std::make_shared<Frontier>();
-  robotPoseFrontier->setGoalPoint(robotP.pose.position.x, robotP.pose.position.y);
-  robotPoseFrontier->setUID(generateUID(robotPoseFrontier));
-  const auto remaining = [&](const FrontierPtr & frontier) {
-      return used_one_turn ? frontier->getPathLengthInM() :
-             calculateLengthRobotToGoal(robotPoseFrontier, frontier);
+  const auto commitment_settings = commitmentSettings();
+  // The planner plugin's length from the robot, which every admitted
+  // frontier has, including one beyond the roadmap's planning distance.
+  const auto remaining = [](const FrontierPtr & frontier) {
+      return frontier->getPathLengthInM();
     };
   const double now = node_->now().seconds();
 
   // Stay with the committed goal while it lasts. Comparing it with better
   // candidates each search made the robot alternate between two frontiers.
   abandonedFrontier.reset();
-  goal_commitment_.holdBack(frontier_list, now, commitment_settings);
   const auto decision = goal_commitment_.keep(frontier_list, remaining, now, commitment_settings);
   switch (decision.outcome) {
     case GoalCommitment::Outcome::Kept:
       LOG_DEBUG("Keeping exploration goal " << decision.frontier);
       nextFrontier = decision.frontier;
+      if (rosVisualizerInstance.getNumSubscribers("full_path") > 0) {
+        nav_msgs::msg::Path keptPath;
+        keptPath.header.frame_id = "map";
+        keptPath.header.stamp = node_->now();
+        computePathBetweenPointsThetaStar(
+          keptPath, robotP.pose.position, nextFrontier->getGoalPoint(), true,
+          explore_costmap_ros_->getCostmap());
+        rosVisualizerInstance.visualizePath("full_path", keptPath);
+      }
       return true;
     case GoalCommitment::Outcome::Lost:
       LOG_INFO(
@@ -434,18 +446,17 @@ bool FullPathOptimizer::getNextGoal(
         "No progress toward exploration goal " << decision.frontier << " for " <<
           commitment_settings.stuck_timeout << " s. Setting it aside for " <<
           commitment_settings.retry_cooldown << " s and choosing a new goal.");
-      goal_commitment_.holdBack(frontier_list, now, commitment_settings);
       break;
     case GoalCommitment::Outcome::GivenUp:
       LOG_WARN(
         "No progress toward exploration goal " << decision.frontier << " on attempt " <<
           commitment_settings.max_attempts << ". Blacklisting it and choosing a new goal.");
-      decision.frontier->setBlacklisted(true);
       abandonedFrontier = decision.frontier;
       break;
     case GoalCommitment::Outcome::None:
       break;
   }
+  goal_commitment_.holdBack(frontier_list, now, commitment_settings);
 
   SortedFrontiers sortedFrontiers;
   // sort based on path length

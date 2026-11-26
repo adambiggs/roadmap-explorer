@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "roadmap_explorer/GoalCommitment.hpp"
+#include "roadmap_explorer/util/Logger.hpp"
 
 namespace roadmap_explorer
 {
@@ -134,8 +135,9 @@ TEST_F(GoalCommitmentTest, RefusesSettingsThatAreNotPositive)
       GoalCommitment::Settings{1.0, 30.0, 0.25, 0.0, 3},
       GoalCommitment::Settings{1.0, 30.0, 0.25, 300.0, 0}})
   {
-    EXPECT_THROW(commitment_.keep({}, remaining, 0.0, settings), std::invalid_argument);
-    EXPECT_THROW(commitment_.holdBack({}, 0.0, settings), std::invalid_argument);
+    EXPECT_THROW(GoalCommitment::validate(settings), RoadmapExplorerException);
+    EXPECT_THROW(commitment_.keep({}, remaining, 0.0, settings), RoadmapExplorerException);
+    EXPECT_THROW(commitment_.holdBack({}, 0.0, settings), RoadmapExplorerException);
   }
 }
 TEST_F(GoalCommitmentTest, HoldsBackASetAsideGoalUntilItsCooldownEnds)
@@ -186,6 +188,41 @@ TEST_F(GoalCommitmentTest, GivesUpForGoodOnTheLastAttempt)
   auto again = frontier(5.0, 0.0);
   commitment_.holdBack({again, frontier(-3.0, 0.0)}, 2031.0, kSettings);
   EXPECT_FALSE(again->isBlacklisted());
+}
+TEST_F(GoalCommitmentTest, CountsAttemptsAtTheCommittedPointDespiteDrift)
+{
+  // Set aside at 3.0, retried at 3.8, and tracked to 4.2 before timing out:
+  // 4.2 is beyond match_radius of the first record but it is the same goal.
+  auto first = frontier(3.0, 0.0);
+  commitment_.commit(first, 3.0, 0.0);
+  remaining_[first] = 3.0;
+  ASSERT_EQ(keep({first}, 30.0).outcome, Outcome::SetAside);
+
+  auto retry = frontier(3.8, 0.0);
+  commitment_.commit(retry, 3.0, 1000.0);
+  auto tracked = frontier(4.2, 0.0);
+  remaining_[tracked] = 3.0;
+  ASSERT_EQ(keep({tracked}, 1030.0).outcome, Outcome::SetAside);
+
+  auto third = frontier(3.4, 0.0);
+  commitment_.commit(third, 3.0, 2000.0);
+  remaining_[third] = 3.0;
+  EXPECT_EQ(keep({third}, 2030.0).outcome, Outcome::GivenUp);
+}
+
+TEST_F(GoalCommitmentTest, GivingUpMarksEveryFrontierAtTheGoal)
+{
+  constexpr GoalCommitment::Settings once{1.0, 30.0, 0.25, 300.0, 1};
+  auto goal = frontier(5.0, 0.0);
+  commitment_.commit(goal, 5.0, 0.0);
+  auto neighbour = frontier(5.6, 0.3);
+  auto other = frontier(-3.0, 0.0);
+  const auto decision = commitment_.keep(
+    {goal, neighbour, other}, [](const FrontierPtr &) {return 5.0;}, 30.0, once);
+  ASSERT_EQ(decision.outcome, Outcome::GivenUp);
+  EXPECT_TRUE(goal->isBlacklisted());
+  EXPECT_TRUE(neighbour->isBlacklisted());
+  EXPECT_FALSE(other->isBlacklisted());
 }
 }  // namespace
 }  // namespace roadmap_explorer

@@ -4,8 +4,9 @@
 #include <cmath>
 #include <iterator>
 #include <limits>
-#include <stdexcept>
 #include <string>
+
+#include "roadmap_explorer/util/Logger.hpp"
 
 namespace roadmap_explorer
 {
@@ -14,8 +15,8 @@ namespace
 void requirePositive(double value, const char * name)
 {
   if (!std::isfinite(value) || value <= 0.0) {
-    throw std::invalid_argument(std::string("fullPathOptimizer.") + name +
-      " must be finite and positive");
+    throw RoadmapExplorerException(std::string("fullPathOptimizer.") + name +
+            " must be finite and positive");
   }
 }
 
@@ -37,7 +38,7 @@ void GoalCommitment::validate(const Settings & settings)
   requirePositive(settings.min_progress, "goal_min_progress");
   requirePositive(settings.retry_cooldown, "goal_retry_cooldown");
   if (settings.max_attempts < 1) {
-    throw std::invalid_argument("fullPathOptimizer.goal_max_attempts must be at least 1");
+    throw RoadmapExplorerException("fullPathOptimizer.goal_max_attempts must be at least 1");
   }
 }
 
@@ -109,21 +110,27 @@ GoalCommitment::Decision GoalCommitment::keep(
     return {Outcome::Kept, match};
   }
 
+  // Count attempts at the point each one was committed to, so drift of the
+  // frontier during an attempt does not start a new count.
+  const auto committed = *anchor_;
   clear();
-  const auto & point = match->getGoalPoint();
   auto earlier = std::find_if(
     set_aside_.begin(), set_aside_.end(), [&](const SetAsideGoal & goal) {
-      return offset(point, goal.point) <= settings.match_radius;
+      return offset(committed, goal.point) <= settings.match_radius;
     });
   if (earlier == set_aside_.end()) {
-    set_aside_.push_back({point, 0, 0.0});
+    set_aside_.push_back({committed, 0, 0.0});
     earlier = std::prev(set_aside_.end());
   }
-  earlier->point = point;
   earlier->attempts += 1;
   earlier->until = now + settings.retry_cooldown;
   if (earlier->attempts >= settings.max_attempts) {
     set_aside_.erase(earlier);
+    for (const auto & frontier : frontiers) {
+      if (offset(frontier->getGoalPoint(), match->getGoalPoint()) <= settings.match_radius) {
+        frontier->setBlacklisted(true);
+      }
+    }
     return {Outcome::GivenUp, match};
   }
   return {Outcome::SetAside, match};

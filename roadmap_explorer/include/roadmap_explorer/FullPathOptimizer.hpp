@@ -174,6 +174,8 @@ private:
 
   double calculatePathLength(std::vector<FrontierPtr> & path);
 
+  GoalCommitment::Settings commitmentSettings() const;
+
   void getFilteredFrontiers(
     std::vector<FrontierPtr> & frontier_list,
     SortedFrontiers & sortedFrontiers,
