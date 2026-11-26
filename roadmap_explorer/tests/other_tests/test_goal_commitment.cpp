@@ -203,6 +203,10 @@ TEST_F(GoalCommitmentTest, CountsAttemptsAtTheCommittedPointDespiteDrift)
   auto tracked = frontier(4.2, 0.0);
   remaining_[tracked] = 3.0;
   ASSERT_EQ(keep({tracked}, 1030.0).outcome, Outcome::SetAside);
+  // The renewed cooldown covers where the frontier timed out.
+  auto there = frontier(4.2, 0.0);
+  commitment_.holdBack({there, frontier(-3.0, 0.0)}, 1031.0, kSettings);
+  EXPECT_TRUE(there->isBlacklisted());
 
   auto third = frontier(3.4, 0.0);
   commitment_.commit(third, 3.0, 2000.0);

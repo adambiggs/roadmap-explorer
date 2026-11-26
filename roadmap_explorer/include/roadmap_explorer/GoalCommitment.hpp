@@ -42,7 +42,8 @@ public:
     Lost,       // no achievable frontier is left at the committed goal
     SetAside,   // frontier is the committed goal, which made no progress in time
     GivenUp,    // as SetAside, on the last allowed attempt; frontiers within
-                // match_radius of it are marked blacklisted
+                // match_radius of it or of the committed point are marked
+                // blacklisted
   };
 
   struct Decision

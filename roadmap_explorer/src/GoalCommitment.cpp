@@ -110,24 +110,31 @@ GoalCommitment::Decision GoalCommitment::keep(
     return {Outcome::Kept, match};
   }
 
-  // Count attempts at the point each one was committed to, so drift of the
-  // frontier during an attempt does not start a new count.
+  // Count attempts by the point each one was committed to as well as where
+  // it timed out, so drift of the frontier does not start a new count.
   const auto committed = *anchor_;
   clear();
+  const auto & reached = match->getGoalPoint();
   auto earlier = std::find_if(
     set_aside_.begin(), set_aside_.end(), [&](const SetAsideGoal & goal) {
-      return offset(committed, goal.point) <= settings.match_radius;
+      return offset(committed, goal.point) <= settings.match_radius ||
+             offset(reached, goal.point) <= settings.match_radius;
     });
   if (earlier == set_aside_.end()) {
-    set_aside_.push_back({committed, 0, 0.0});
+    set_aside_.push_back({reached, 0, 0.0});
     earlier = std::prev(set_aside_.end());
   }
+  // Hold back where the frontier now is.
+  earlier->point = reached;
   earlier->attempts += 1;
   earlier->until = now + settings.retry_cooldown;
   if (earlier->attempts >= settings.max_attempts) {
     set_aside_.erase(earlier);
     for (const auto & frontier : frontiers) {
-      if (offset(frontier->getGoalPoint(), match->getGoalPoint()) <= settings.match_radius) {
+      const auto & point = frontier->getGoalPoint();
+      if (offset(point, reached) <= settings.match_radius ||
+        offset(point, committed) <= settings.match_radius)
+      {
         frontier->setBlacklisted(true);
       }
     }
