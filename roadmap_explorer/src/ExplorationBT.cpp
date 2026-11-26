@@ -291,13 +291,17 @@ uint16_t RoadmapExplorationBT::tickOnceWithSleep(const std::function<bool()> & c
     {
       if (!unreachable_episode_active_) {
         unreachable_episode_active_ = true;
+        std::ostringstream failed_paths;
+        failed_paths << plan_failures.count << " candidate paths failed";
+        if (plan_failures.count > 0) {
+          failed_paths << ", the first from (" << plan_failures.first_start.x << ", " <<
+            plan_failures.first_start.y << ") to (" << plan_failures.first_target.x << ", " <<
+            plan_failures.first_target.y << ")";
+        }
         LOG_ERROR(
           "No achievable frontiers within " <<
             blackboard->get<double>("current_frontier_search_distance") << " m: " <<
-            plan_failures.count << " candidate paths failed, the first from (" <<
-            plan_failures.first_start.x << ", " << plan_failures.first_start.y << ") to (" <<
-            plan_failures.first_target.x << ", " << plan_failures.first_target.y <<
-            "). Widening the search until a frontier is reachable.");
+            failed_paths.str() << ". Widening the search until a frontier is reachable.");
       }
       ++unreachable_searches_;
       unreachable_failed_plans_ += plan_failures.count;

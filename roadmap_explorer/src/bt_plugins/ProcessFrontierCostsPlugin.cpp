@@ -73,7 +73,7 @@ namespace roadmap_explorer
         LOG_FATAL("Failed to retrieve latest_robot_pose from blackboard.");
         throw RoadmapExplorerException("Failed to retrieve latest_robot_pose from blackboard.");
         }
-        LOG_INFO("Request to get frontier costs sent");
+        LOG_DEBUG("Request to get frontier costs sent");
         std::function<bool()> canceled = [] {return false;};
         config().blackboard->get("exploration_canceled", canceled);
         bool used_one_turn = false;
@@ -96,7 +96,7 @@ namespace roadmap_explorer
         }
         }
         if (!atleast_one_achievable_frontier) {
-        LOG_INFO("No achievable frontiers left. Exiting.");
+        LOG_DEBUG("No achievable frontiers left. Exiting.");
         config().blackboard->set<ExplorationErrorCode>(
             "error_code_id", ExplorationErrorCode::NO_ACHIEVABLE_FRONTIERS_LEFT);
         return BT::NodeStatus::FAILURE;
