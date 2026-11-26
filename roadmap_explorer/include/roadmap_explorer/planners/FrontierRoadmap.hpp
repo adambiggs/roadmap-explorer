@@ -159,6 +159,12 @@ private:
 
   void getClosestNodeInRoadMap(const FrontierPtr & interestNode, FrontierPtr & closestNode);
 
+  // Searches outward ring by ring until no unvisited hash cell can hold a closer eligible node.
+  // The caller holds spatial_hash_map_mutex_.
+  void getClosestEligibleNode(
+    const FrontierPtr & interestNode, FrontierPtr & closestNode,
+    const std::function<bool(const FrontierPtr &)> & eligible, const std::string & map_name);
+
   std::mutex & getRoadmapMutex()
   {
     return roadmap_mutex_;

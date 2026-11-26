@@ -19,6 +19,10 @@
     under the License.
 */
 
+#include <algorithm>
+#include <cstdlib>
+#include <limits>
+
 #include "roadmap_explorer/planners/FrontierRoadmap.hpp"
 #include "roadmap_explorer/util/GeometryUtils.hpp"
 #include <ctime>
@@ -525,77 +529,68 @@ void FrontierRoadMap::getClosestNodeInHashmap(
   const FrontierPtr & interestNode,
   FrontierPtr & closestNode)
 {
-  // LOG_TRACE("Locking getClosestNodeInHashmap");
   std::lock_guard<std::mutex> lock(spatial_hash_map_mutex_);
-  // LOG_TRACE("UnLocking getClosestNodeInHashmap");
-  auto grid_cell = getGridCell(interestNode->getGoalPoint().x, interestNode->getGoalPoint().y);
-  double min_distance = std::numeric_limits<double>::max();
-  bool foundClosestNode = false;
-  int searchRadiusMultiplier = 1;
-  while (!foundClosestNode && rclcpp::ok()) {
-    int searchRadius = GRID_CELL_SIZE * searchRadiusMultiplier;
-    if (searchRadius > 10) {
-      LOG_CRITICAL("Cannot find closest node within 10m in hashmap. This is not ok.")
-      break;
-    }
-    for (int dx = -searchRadius; dx <= searchRadius; ++dx) {
-      for (int dy = -searchRadius; dy <= searchRadius; ++dy) {
-        auto neighbor_cell = std::make_pair(grid_cell.first + dx, grid_cell.second + dy);
-        // LOG_INFO("Neighbour cell at x: " << neighbor_cell.first << " and y: " << neighbor_cell.second);
-        if (spatial_hash_map_.count(neighbor_cell) > 0) {
-          for (const auto & existing_frontier : spatial_hash_map_[neighbor_cell]) {
-            double distance = distanceBetweenFrontiers(interestNode, existing_frontier);
-            if (distance < min_distance) {
-              foundClosestNode = true;
-              min_distance = distance;
-              closestNode = existing_frontier;
-            }
-          }
-        }
-      }
-    }
-    ++searchRadiusMultiplier;
-  }
+  getClosestEligibleNode(
+    interestNode, closestNode, [](const FrontierPtr &) {return true;}, "hashmap");
 }
 
 void FrontierRoadMap::getClosestNodeInRoadMap(
   const FrontierPtr & interestNode,
   FrontierPtr & closestNode)
 {
-  // LOG_TRACE("Locking getClosestNodeInRoadMap");
   std::lock_guard<std::mutex> lock(spatial_hash_map_mutex_);
-  // LOG_TRACE("UnLocking getClosestNodeInRoadMap");
+  getClosestEligibleNode(
+    interestNode, closestNode,
+    [this](const FrontierPtr & frontier) {
+      std::lock_guard<std::mutex> roadmap_lock(roadmap_mutex_);
+      return roadmap_.count(frontier) > 0;
+    }, "roadmap");
+}
+
+void FrontierRoadMap::getClosestEligibleNode(
+  const FrontierPtr & interestNode, FrontierPtr & closestNode,
+  const std::function<bool(const FrontierPtr &)> & eligible, const std::string & map_name)
+{
+  const double max_search_distance_m = 10.0;
   auto grid_cell = getGridCell(interestNode->getGoalPoint().x, interestNode->getGoalPoint().y);
   double min_distance = std::numeric_limits<double>::max();
   bool foundClosestNode = false;
-  int searchRadiusMultiplier = 1;
-  while (!foundClosestNode && rclcpp::ok()) {
-    int searchRadius = GRID_CELL_SIZE * searchRadiusMultiplier;
-    if (searchRadius > 10) {
-      LOG_CRITICAL("Cannot find closest node within 10m in roadmap. This is not ok.")
-      break;
+  for (int ring = 0; rclcpp::ok(); ++ring) {
+    // Rings 0 to ring - 1 are searched. The query can lie on its own cell's edge, so a cell in
+    // this ring or beyond is at least (ring - 1) * GRID_CELL_SIZE away.
+    const double unvisited_distance = (ring - 1) * GRID_CELL_SIZE;
+    if (foundClosestNode && min_distance <= unvisited_distance) {
+      return;
     }
-    for (int dx = -searchRadius; dx <= searchRadius; ++dx) {
-      for (int dy = -searchRadius; dy <= searchRadius; ++dy) {
-        auto neighbor_cell = std::make_pair(grid_cell.first + dx, grid_cell.second + dy);
-        // LOG_INFO("Neighbour cell at x: " << neighbor_cell.first << " and y: " << neighbor_cell.second);
-        if (spatial_hash_map_.count(neighbor_cell) > 0) {
-          for (const auto & existing_frontier : spatial_hash_map_[neighbor_cell]) {
-            roadmap_mutex_.lock();
-            if (roadmap_.count(existing_frontier) > 0) {
-              double distance = distanceBetweenFrontiers(interestNode, existing_frontier);
-              if (distance < min_distance) {
-                foundClosestNode = true;
-                min_distance = distance;
-                closestNode = existing_frontier;
-              }
-            }
-            roadmap_mutex_.unlock();
+    if (unvisited_distance > max_search_distance_m) {
+      if (!foundClosestNode) {
+        LOG_CRITICAL("Cannot find closest node within 10m in " << map_name << ". This is not ok.");
+      }
+      return;
+    }
+    for (int dx = -ring; dx <= ring; ++dx) {
+      for (int dy = -ring; dy <= ring; ++dy) {
+        if (std::max(std::abs(dx), std::abs(dy)) != ring) {
+          continue;
+        }
+        auto cell = spatial_hash_map_.find(
+          std::make_pair(grid_cell.first + dx, grid_cell.second + dy));
+        if (cell == spatial_hash_map_.end()) {
+          continue;
+        }
+        for (const auto & existing_frontier : cell->second) {
+          if (!eligible(existing_frontier)) {
+            continue;
+          }
+          double distance = distanceBetweenFrontiers(interestNode, existing_frontier);
+          if (distance < min_distance) {
+            foundClosestNode = true;
+            min_distance = distance;
+            closestNode = existing_frontier;
           }
         }
       }
     }
-    ++searchRadiusMultiplier;
   }
 }
 
