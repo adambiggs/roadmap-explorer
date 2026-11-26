@@ -57,11 +57,15 @@ public:
             "/cmd_vel_explore", 10);
         cmd_vel_pub_->on_activate();
         
-        // Subscribe to laser scan for obstacle detection
+        // Subscribe to laser scan for obstacle detection. The executor can still be running this
+        // callback after the tree is destroyed, so it owns the state it writes.
         scan_sub_ = ros_node_ptr_->create_subscription<sensor_msgs::msg::LaserScan>(
             "/scan",
             rclcpp::SensorDataQoS(),
-            std::bind(&BootstrapRandomWalkBT::laserScanCallback, this, std::placeholders::_1));
+            [scan = scan_](const sensor_msgs::msg::LaserScan::SharedPtr msg) {
+                std::lock_guard<std::mutex> lock(scan->mutex);
+                scan->last = msg;
+            });
         
         // A new behavior tree reuses the same lifecycle node and its parameters.
         nav2_util::declare_parameter_if_not_declared(
@@ -205,12 +209,6 @@ private:
         bool needs_bootstrap;
     };
     
-    void laserScanCallback(const sensor_msgs::msg::LaserScan::SharedPtr msg)
-    {
-        std::lock_guard<std::mutex> lock(scan_mutex_);
-        last_scan_ = msg;
-    }
-    
     MapStatus checkMapStatus()
     {
         MapStatus status;
@@ -249,8 +247,8 @@ private:
         // decide from one scan.
         sensor_msgs::msg::LaserScan::SharedPtr scan;
         {
-            std::lock_guard<std::mutex> lock(scan_mutex_);
-            scan = last_scan_;
+            std::lock_guard<std::mutex> lock(scan_->mutex);
+            scan = scan_->last;
         }
         if (!scan) {
             LOG_WARN("Bootstrap mode: No laser scan data available, stopping");
@@ -383,9 +381,11 @@ private:
     
     rclcpp_lifecycle::LifecyclePublisher<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_pub_;
     
-    std::mutex scan_mutex_;
-    sensor_msgs::msg::LaserScan::SharedPtr last_scan_;
-    // Declared after the state its callback writes, so it is destroyed first.
+    struct LatestScan {
+        std::mutex mutex;
+        sensor_msgs::msg::LaserScan::SharedPtr last;
+    };
+    std::shared_ptr<LatestScan> scan_ = std::make_shared<LatestScan>();
     rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr scan_sub_;
     
     // Parameters
