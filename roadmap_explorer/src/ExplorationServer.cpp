@@ -201,6 +201,7 @@ void ExplorationServer::execute(const std::shared_ptr<GoalHandleExplore> goal_ha
           if(!initialized)
           {
             result->success = false;
+            result->error_code = ExploreActionResult::UNKNOWN;
             terminateGoal(ActionTerminalState::ABORT, goal_handle, result);
             return;
           }
@@ -235,6 +236,7 @@ void ExplorationServer::execute(const std::shared_ptr<GoalHandleExplore> goal_ha
           if(!initialized)
           {
             result->success = false;
+            result->error_code = ExploreActionResult::UNKNOWN;
             terminateGoal(ActionTerminalState::ABORT, goal_handle, result);
             return;
           }

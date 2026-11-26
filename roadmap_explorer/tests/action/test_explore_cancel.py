@@ -176,8 +176,9 @@ class TestExploreCancel(unittest.TestCase):
         self.reject_allow_unknown = True
         failed = self.await_result(self.parent.send_goal_async(Explore.Goal()))
         self.assertTrue(failed.accepted)
-        self.assertEqual(self.await_result(failed.get_result_async()).status,
-                         GoalStatus.STATUS_ABORTED)
+        failed_result = self.await_result(failed.get_result_async())
+        self.assertEqual(failed_result.status, GoalStatus.STATUS_ABORTED)
+        self.assertEqual(failed_result.result.error_code, Explore.Result.UNKNOWN)
         resume = Explore.Goal()
         resume.exploration_bringup_mode = Explore.Goal.CONTINUE_FROM_TERMINATED_SESSION
         resumed = self.await_result(self.parent.send_goal_async(resume))
