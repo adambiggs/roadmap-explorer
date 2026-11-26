@@ -99,6 +99,7 @@ protected:
   rclcpp::executors::MultiThreadedExecutor::SharedPtr executor_;
   rclcpp::CallbackGroup::SharedPtr action_server_cb_group_;
   rclcpp::CallbackGroup::SharedPtr service_cb_group_;
+  rclcpp::CallbackGroup::SharedPtr nav2_client_cb_group_;
   std::shared_ptr<nav2_util::LifecycleNode> node_;
 };
 

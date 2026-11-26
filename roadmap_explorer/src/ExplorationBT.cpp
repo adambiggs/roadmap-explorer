@@ -23,7 +23,9 @@
 
 namespace roadmap_explorer
 {
-RoadmapExplorationBT::RoadmapExplorationBT(std::shared_ptr<nav2_util::LifecycleNode> node, bool localisation_only_mode)
+RoadmapExplorationBT::RoadmapExplorationBT(
+  std::shared_ptr<nav2_util::LifecycleNode> node, bool localisation_only_mode,
+  rclcpp::CallbackGroup::SharedPtr nav2_client_callback_group)
 : bt_node_(node)
 {
   LOG_INFO("Creating exploration costmap instance");
@@ -65,7 +67,8 @@ RoadmapExplorationBT::RoadmapExplorationBT(std::shared_ptr<nav2_util::LifecycleN
   nav2_interface_ = std::make_shared<Nav2Interface<nav2_msgs::action::NavigateToPose>>(
     bt_node_,
     "navigate_to_pose",
-    "goal_update");
+    "goal_update",
+    nav2_client_callback_group);
 
   cost_assigner_ptr_ = std::make_shared<CostAssigner>(explore_costmap_ros_, bt_node_);
   

@@ -70,7 +70,10 @@ using ExploreActionResult = roadmap_explorer_msgs::action::Explore_Result;
 class RoadmapExplorationBT
 {
 public:
-  RoadmapExplorationBT(std::shared_ptr<nav2_util::LifecycleNode> node, bool localisation_only_mode);
+  // nav2_client_callback_group must outlive the tree; see Nav2Interface.
+  RoadmapExplorationBT(
+    std::shared_ptr<nav2_util::LifecycleNode> node, bool localisation_only_mode,
+    rclcpp::CallbackGroup::SharedPtr nav2_client_callback_group);
 
   ~RoadmapExplorationBT();
 

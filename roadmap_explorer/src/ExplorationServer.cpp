@@ -42,6 +42,10 @@ nav2_util::CallbackReturn ExplorationServer::on_configure(const rclcpp_lifecycle
 {
   LOG_INFO("Configured " << get_name());
   node_ = shared_from_this();
+  // Created once per node: each behavior tree's Nav2 client uses it.
+  if (!nav2_client_cb_group_) {
+    nav2_client_cb_group_ = create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+  }
 
   nav2_util::declare_parameter_if_not_declared(node_, "localisation_only_mode", rclcpp::ParameterValue(false));
   node_->get_parameter("localisation_only_mode", localisation_only_mode_);
@@ -177,7 +181,8 @@ void ExplorationServer::publish_feedback(
 bool ExplorationServer::make_exploration_bt(bool localisation_only_mode)
 {
   // Keep a tree that failed bringup out of exploration_bt_, so no later goal can run it.
-  auto exploration_bt = std::make_shared<RoadmapExplorationBT>(node_, localisation_only_mode);
+  auto exploration_bt = std::make_shared<RoadmapExplorationBT>(
+    node_, localisation_only_mode, nav2_client_cb_group_);
   if (!exploration_bt->makeBTNodes()) {
     exploration_bt->halt();
     return false;

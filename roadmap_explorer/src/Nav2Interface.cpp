@@ -27,14 +27,11 @@ namespace roadmap_explorer
 template<typename ActionT>
 Nav2Interface<ActionT>::Nav2Interface(
   std::shared_ptr<nav2_util::LifecycleNode> node, std::string action_name,
-  std::string update_topic_name)
+  std::string update_topic_name, rclcpp::CallbackGroup::SharedPtr callback_group)
 {
   node_ = node;
   nav2_goal_state_ = NavGoalStatus::DEFAULT;
-  nav2_client_callback_group_ = node->create_callback_group(
-    rclcpp::CallbackGroupType::MutuallyExclusive);
-  nav2Client_ =
-    rclcpp_action::create_client<ActionT>(node, action_name, nav2_client_callback_group_);
+  nav2Client_ = rclcpp_action::create_client<ActionT>(node, action_name, callback_group);
 
   nav2_goal_options_.feedback_callback = std::bind(
     &Nav2Interface::nav2GoalFeedbackCallback, this,
