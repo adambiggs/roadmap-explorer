@@ -178,6 +178,13 @@ class TestExploreCancel(unittest.TestCase):
         self.assertTrue(failed.accepted)
         self.assertEqual(self.await_result(failed.get_result_async()).status,
                          GoalStatus.STATUS_ABORTED)
+        resume = Explore.Goal()
+        resume.exploration_bringup_mode = Explore.Goal.CONTINUE_FROM_TERMINATED_SESSION
+        resumed = self.await_result(self.parent.send_goal_async(resume))
+        self.assertTrue(resumed.accepted)
+        self.assertEqual(self.await_result(resumed.get_result_async()).status,
+                         GoalStatus.STATUS_ABORTED)
+        self.assertFalse(self.child_requested.is_set(), "the failed tree was ticked")
         self.reject_allow_unknown = False
         retry = self.await_result(self.parent.send_goal_async(Explore.Goal()))
         self.assertTrue(retry.accepted)

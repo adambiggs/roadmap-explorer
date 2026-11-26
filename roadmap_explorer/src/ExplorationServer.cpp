@@ -171,8 +171,14 @@ void ExplorationServer::publish_feedback(
 
 bool ExplorationServer::make_exploration_bt(bool localisation_only_mode)
 {
-  exploration_bt_ = std::make_shared<RoadmapExplorationBT>(node_, localisation_only_mode);
-  return exploration_bt_->makeBTNodes();
+  // Keep a tree that failed bringup out of exploration_bt_, so no later goal can run it.
+  auto exploration_bt = std::make_shared<RoadmapExplorationBT>(node_, localisation_only_mode);
+  if (!exploration_bt->makeBTNodes()) {
+    exploration_bt->halt();
+    return false;
+  }
+  exploration_bt_ = exploration_bt;
+  return true;
 }
 
 void ExplorationServer::execute(const std::shared_ptr<GoalHandleExplore> goal_handle)
