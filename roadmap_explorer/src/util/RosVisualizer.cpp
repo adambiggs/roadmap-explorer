@@ -165,6 +165,48 @@ RosVisualizer::RosVisualizer(
   LOG_INFO("All legacy publishers pre-created and activated");
 }
 
+void RosVisualizer::clearAll(const std::string & frame_id)
+{
+  std::lock_guard<std::mutex> lock(publisher_mutex_);
+  const auto stamp = node_->now();
+
+  sensor_msgs::msg::PointCloud2 cloud;
+  cloud.header.frame_id = frame_id;
+  cloud.header.stamp = stamp;
+  for (auto & [topic, publisher] : pointcloud_publishers_) {
+    publisher->publish(cloud);
+  }
+
+  visualization_msgs::msg::Marker marker;
+  marker.header.frame_id = frame_id;
+  marker.header.stamp = stamp;
+  marker.action = visualization_msgs::msg::Marker::DELETEALL;
+  for (auto & [topic, publisher] : marker_publishers_) {
+    publisher->publish(marker);
+  }
+
+  visualization_msgs::msg::MarkerArray markers;
+  markers.markers.push_back(marker);
+  for (auto & [topic, publisher] : marker_array_publishers_) {
+    publisher->publish(markers);
+  }
+
+  nav_msgs::msg::Path path;
+  path.header.frame_id = frame_id;
+  path.header.stamp = stamp;
+  for (auto & [topic, publisher] : path_publishers_) {
+    publisher->publish(path);
+  }
+
+  geometry_msgs::msg::PoseArray poses;
+  poses.header.frame_id = frame_id;
+  poses.header.stamp = stamp;
+  for (auto & [topic, publisher] : pose_array_publishers_) {
+    publisher->publish(poses);
+  }
+  LOG_INFO("Cleared exploration visualizations");
+}
+
 RosVisualizer::~RosVisualizer()
 {
   LOG_INFO("RosVisualizer::~RosVisualizer()");

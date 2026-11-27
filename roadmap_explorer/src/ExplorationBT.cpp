@@ -346,6 +346,8 @@ void RoadmapExplorationBT::halt()
     sensor_simulator_->stopMapping();
   }
   explore_costmap_ros_->pause();
+  // The session is over: stop viewers showing its plan and frontiers.
+  rosVisualizerInstance.clearAll(explore_costmap_ros_->getGlobalFrameID());
   nav2_interface_->cancelAllGoals();
   while (!nav2_interface_->isGoalTerminated() && rclcpp::ok()) {
     rclcpp::sleep_for(std::chrono::milliseconds(100));

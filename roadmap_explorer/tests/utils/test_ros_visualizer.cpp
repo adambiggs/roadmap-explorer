@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <functional>
 #include <memory>
 #include <vector>
 #include <string>
@@ -352,6 +353,65 @@ TEST_F(RosVisualizerTest, VisualizePath)
     empty_path.header.stamp = rclcpp::Clock().now();
     EXPECT_NO_THROW(visualizer.visualizePath("test_empty_path", empty_path));
     
+    RosVisualizer::destroyInstance();
+}
+
+// A finished session leaves no plan, frontiers or markers on screen.
+TEST_F(RosVisualizerTest, ClearAllEmptiesEveryTopicAPreviousSessionDrew)
+{
+    RosVisualizer::createInstance(node_, costmap_.get());
+    RosVisualizer& visualizer = RosVisualizer::getInstance();
+    auto viewer = std::make_shared<rclcpp::Node>("test_viewer");
+
+    std::vector<nav_msgs::msg::Path> paths;
+    std::vector<visualization_msgs::msg::MarkerArray> arrays;
+    std::vector<visualization_msgs::msg::Marker> markers;
+    std::vector<sensor_msgs::msg::PointCloud2> clouds;
+    auto path_sub = viewer->create_subscription<nav_msgs::msg::Path>(
+        "full_path", 10, [&](nav_msgs::msg::Path::SharedPtr m) {paths.push_back(*m);});
+    auto array_sub = viewer->create_subscription<visualization_msgs::msg::MarkerArray>(
+        "frontier_cell_markers", 10,
+        [&](visualization_msgs::msg::MarkerArray::SharedPtr m) {arrays.push_back(*m);});
+    auto marker_sub = viewer->create_subscription<visualization_msgs::msg::Marker>(
+        "observable_cells", 10,
+        [&](visualization_msgs::msg::Marker::SharedPtr m) {markers.push_back(*m);});
+    auto cloud_sub = viewer->create_subscription<sensor_msgs::msg::PointCloud2>(
+        "frontiers", 10, [&](sensor_msgs::msg::PointCloud2::SharedPtr m) {clouds.push_back(*m);});
+
+    rclcpp::executors::SingleThreadedExecutor executor;
+    executor.add_node(viewer);
+    auto spin_until = [&](const std::function<bool()> & done) {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+        while (!done() && std::chrono::steady_clock::now() < deadline) {
+            executor.spin_some(std::chrono::milliseconds(10));
+        }
+    };
+    // Wait for discovery so nothing published below is lost.
+    spin_until([&] {
+        return path_sub->get_publisher_count() > 0 && array_sub->get_publisher_count() > 0 &&
+               marker_sub->get_publisher_count() > 0 && cloud_sub->get_publisher_count() > 0;
+    });
+
+    visualizer.visualizePath("full_path", test_path_);
+    spin_until([&] {return !paths.empty();});
+    ASSERT_FALSE(paths.back().poses.empty());
+
+    visualizer.clearAll("map");
+    spin_until([&] {
+        return paths.size() >= 2 && !arrays.empty() && !markers.empty() && !clouds.empty();
+    });
+
+    ASSERT_GE(paths.size(), 2u);
+    EXPECT_TRUE(paths.back().poses.empty());
+    EXPECT_EQ(paths.back().header.frame_id, "map");
+    ASSERT_FALSE(arrays.empty());
+    ASSERT_FALSE(arrays.back().markers.empty());
+    EXPECT_EQ(arrays.back().markers.front().action, visualization_msgs::msg::Marker::DELETEALL);
+    ASSERT_FALSE(markers.empty());
+    EXPECT_EQ(markers.back().action, visualization_msgs::msg::Marker::DELETEALL);
+    ASSERT_FALSE(clouds.empty());
+    EXPECT_EQ(clouds.back().width * clouds.back().height, 0u);
+
     RosVisualizer::destroyInstance();
 }
 
