@@ -170,8 +170,8 @@ void RosVisualizer::clearAll(const std::string & frame_id)
   std::lock_guard<std::mutex> lock(publisher_mutex_);
   const auto stamp = node_->now();
 
-  sensor_msgs::msg::PointCloud2 cloud;
-  cloud.header.frame_id = frame_id;
+  // Viewers drop a cloud without x, y and z fields, so keep the normal layout.
+  auto cloud = convertToRosPointCloud(pcl::PointCloud<pcl::PointXYZI>(), frame_id);
   cloud.header.stamp = stamp;
   for (auto & [topic, publisher] : pointcloud_publishers_) {
     publisher->publish(cloud);

@@ -394,6 +394,7 @@ TEST_F(RosVisualizerTest, ClearAllEmptiesEveryTopicAPreviousSessionDrew)
 
     visualizer.visualizePath("full_path", test_path_);
     spin_until([&] {return !paths.empty();});
+    ASSERT_FALSE(paths.empty());
     ASSERT_FALSE(paths.back().poses.empty());
 
     visualizer.clearAll("map");
@@ -411,6 +412,11 @@ TEST_F(RosVisualizerTest, ClearAllEmptiesEveryTopicAPreviousSessionDrew)
     EXPECT_EQ(markers.back().action, visualization_msgs::msg::Marker::DELETEALL);
     ASSERT_FALSE(clouds.empty());
     EXPECT_EQ(clouds.back().width * clouds.back().height, 0u);
+    std::vector<std::string> fields;
+    for (const auto & field : clouds.back().fields) {
+        fields.push_back(field.name);
+    }
+    EXPECT_EQ(fields, (std::vector<std::string>{"x", "y", "z", "intensity"}));
 
     RosVisualizer::destroyInstance();
 }
