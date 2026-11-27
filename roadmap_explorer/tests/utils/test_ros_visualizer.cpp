@@ -27,7 +27,10 @@ class RosVisualizerTest : public ::testing::Test
 protected:
     void SetUp() override
     {
-        rclcpp::init(0, nullptr);
+        // A private domain keeps the clear test off live viewers' topics.
+        rclcpp::InitOptions options;
+        options.set_domain_id(93);
+        rclcpp::init(0, nullptr, options);
         
         // Create a lifecycle node for testing
         node_ = std::make_shared<nav2_util::LifecycleNode>("test_ros_visualizer");
