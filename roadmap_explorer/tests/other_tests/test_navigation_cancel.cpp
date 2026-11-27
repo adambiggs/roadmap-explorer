@@ -194,9 +194,23 @@ TEST_F(NavigationCancel, ClearPlanReplacesTheLastPlanAViewerSaw)
   ASSERT_TRUE(spinUntil([&] { return !plans.empty(); }));
   ASSERT_EQ(plans.back().poses.size(), 3u);
 
+  ASSERT_TRUE(client->sendGoal(pose));
+  ASSERT_TRUE(spinUntil([this] { return accepted != nullptr; }));
+  accepted->succeed(std::make_shared<Navigate::Result>());
+  ASSERT_TRUE(spinUntil([this] { return client->isGoalTerminated(); }));
   client->clearPlan("map");
   ASSERT_TRUE(spinUntil([&] { return plans.size() == 2; }));
   EXPECT_TRUE(plans.back().poses.empty());
   EXPECT_EQ(plans.back().header.frame_id, "map");
+}
+
+TEST_F(NavigationCancel, ClearPlanLeavesAPlanItsGoalsDidNotProduce)
+{
+  std::vector<nav_msgs::msg::Path> plans;
+  auto viewer = server_node->create_subscription<nav_msgs::msg::Path>(
+    "plan", 10, [&](nav_msgs::msg::Path::SharedPtr plan) { plans.push_back(*plan); });
+  ASSERT_TRUE(spinUntil([&] { return viewer->get_publisher_count() == 1; }));
+  client->clearPlan("map");
+  EXPECT_FALSE(spinUntil([&] { return !plans.empty(); }));
 }
 }  // namespace

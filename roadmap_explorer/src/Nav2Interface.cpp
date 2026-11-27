@@ -67,6 +67,11 @@ Nav2Interface<ActionT>::~Nav2Interface()
 template<typename ActionT>
 void Nav2Interface<ActionT>::clearPlan(const std::string & frame_id)
 {
+  std::lock_guard<std::recursive_mutex> lock(goal_state_mutex_);
+  if (!goal_sent_since_clear_) {
+    return;
+  }
+  goal_sent_since_clear_ = false;
   nav_msgs::msg::Path path;
   path.header.frame_id = frame_id;
   path.header.stamp = node_->now();
@@ -201,6 +206,7 @@ bool Nav2Interface<ActionT>::sendGoal(geometry_msgs::msg::PoseStamped & pose)
   nav2_goal_->pose = goal_pose;
   nav2_goal_->behavior_tree = parameterInstance.getValue<std::string>("explorationBT.nav2_bt_xml");
   this->nav2Client_->async_send_goal(*nav2_goal_, this->nav2_goal_options_);
+  goal_sent_since_clear_ = true;
   return true;
 }
 
