@@ -76,8 +76,8 @@ public:
   virtual bool sendGoal(geometry_msgs::msg::PoseStamped & pose);
   void sendUpdatedGoal(geometry_msgs::msg::PoseStamped pose);
   // Nav2 publishes its plan only while it navigates, so viewers keep the last one.
-  // Clears it only if this interface sent a goal since the last clear, so a
-  // plan another navigator owns stays.
+  // Clears it only if Nav2 accepted a goal from this interface since the last
+  // clear, so a plan another navigator owns stays.
   void clearPlan(const std::string & frame_id);
   NavGoalStatus getGoalStatus()
   {
@@ -133,7 +133,7 @@ protected:
 
   typename rclcpp_action::ClientGoalHandle<ActionT>::SharedPtr current_goal_handle_;
   bool shutting_down_ = false;
-  bool goal_sent_since_clear_ = false;
+  bool goal_accepted_since_clear_ = false;
 
   std::shared_ptr<nav2_util::LifecycleNode> node_;
 };

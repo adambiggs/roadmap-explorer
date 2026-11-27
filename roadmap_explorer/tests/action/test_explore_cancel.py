@@ -205,6 +205,31 @@ class TestExploreCancel(unittest.TestCase):
             received.wait_for(lambda: len(plans[-1].poses) != 3, 1)
             self.assertEqual(len(plans[-1].poses), 3)
 
+    def test_rejected_session_leaves_another_navigators_plan(self):
+        plans = []
+        received = threading.Condition()
+
+        def record(plan):
+            with received:
+                plans.append(plan)
+                received.notify_all()
+
+        self.node.create_subscription(NavPath, "plan", record, 10)
+        other = NavPath()
+        other.header.frame_id = "map"
+        other.poses = [PoseStamped(header=other.header)] * 3
+        planner = self.node.create_publisher(NavPath, "plan", 1)
+        self.wait_until(lambda: planner.get_subscription_count() > 0, "viewer never matched")
+        planner.publish(other)
+        with received:
+            self.assertTrue(received.wait_for(lambda: plans, 5))
+
+        result, _ = self.cancel_while_child_is_pending(accept=False)
+        self.assertEqual(self.await_result(result).status, GoalStatus.STATUS_CANCELED)
+        with received:
+            received.wait_for(lambda: len(plans[-1].poses) != 3, 1)
+            self.assertEqual(len(plans[-1].poses), 3)
+
     def test_rejected_child_releases_parent(self):
         result, _ = self.cancel_while_child_is_pending(accept=False)
         self.assertEqual(self.await_result(result).status, GoalStatus.STATUS_CANCELED)

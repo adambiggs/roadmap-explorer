@@ -68,10 +68,10 @@ template<typename ActionT>
 void Nav2Interface<ActionT>::clearPlan(const std::string & frame_id)
 {
   std::lock_guard<std::recursive_mutex> lock(goal_state_mutex_);
-  if (!goal_sent_since_clear_) {
+  if (!goal_accepted_since_clear_) {
     return;
   }
-  goal_sent_since_clear_ = false;
+  goal_accepted_since_clear_ = false;
   nav_msgs::msg::Path path;
   path.header.frame_id = frame_id;
   path.header.stamp = node_->now();
@@ -155,6 +155,8 @@ void Nav2Interface<ActionT>::nav2GoalResponseCallback(
   } else {
     LOG_INFO("Goal accepted by Nav2 server, waiting for result");
     current_goal_handle_ = goal_handle;
+    // Only an accepted goal makes Nav2 plan, so only then is /plan the explorer's.
+    goal_accepted_since_clear_ = true;
     if (nav2_goal_state_ == NavGoalStatus::CANCELLING) {
       requestCancel(goal_handle);
     } else {
@@ -206,7 +208,6 @@ bool Nav2Interface<ActionT>::sendGoal(geometry_msgs::msg::PoseStamped & pose)
   nav2_goal_->pose = goal_pose;
   nav2_goal_->behavior_tree = parameterInstance.getValue<std::string>("explorationBT.nav2_bt_xml");
   this->nav2Client_->async_send_goal(*nav2_goal_, this->nav2_goal_options_);
-  goal_sent_since_clear_ = true;
   return true;
 }
 
