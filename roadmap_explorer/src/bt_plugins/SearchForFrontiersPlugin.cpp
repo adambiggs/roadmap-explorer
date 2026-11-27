@@ -73,13 +73,22 @@ namespace roadmap_explorer
             frontier_count_pub_->publish(count_msg);
         }
 
-        if (searchResult != FrontierSearchResult::SUCCESSFUL_SEARCH)
+        if (searchResult == FrontierSearchResult::NO_FRONTIERS_FOUND)
         {
             LOG_INFO("No frontiers in current search radius.")
             explore_costmap_ros_->getCostmap()->getMutex()->unlock();
             config().blackboard->set<ExplorationErrorCode>(
                 "error_code_id",
                 ExplorationErrorCode::NO_FRONTIERS_IN_CURRENT_RADIUS);
+            return BT::NodeStatus::FAILURE;
+        }
+        if (searchResult != FrontierSearchResult::SUCCESSFUL_SEARCH)
+        {
+            LOG_ERROR("Frontier search could not run (result " << static_cast<int>(searchResult) << ").");
+            explore_costmap_ros_->getCostmap()->getMutex()->unlock();
+            config().blackboard->set<ExplorationErrorCode>(
+                "error_code_id",
+                ExplorationErrorCode::FRONTIER_SEARCH_FAILED);
             return BT::NodeStatus::FAILURE;
         }
         auto every_frontier = frontierSearchPtr_->getAllFrontiers();

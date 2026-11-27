@@ -48,7 +48,10 @@ enum class ExplorationErrorCode
   REFINED_PATH_COMPUTATION_FAILURE,
   UNHANDLED_ERROR,
   NAV2_GOAL_ABORT,
-  NO_ERROR
+  NO_ERROR,
+  // The search could not run (robot outside the costmap, or no cell to start
+  // from), so it says nothing about whether frontiers are left.
+  FRONTIER_SEARCH_FAILED
 };
 
 class BTPlugin

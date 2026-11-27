@@ -98,6 +98,7 @@ TEST_F(BaseBTPluginTest, ExplorationErrorCodeValues)
   EXPECT_EQ(static_cast<int>(ExplorationErrorCode::UNHANDLED_ERROR), 6);
   EXPECT_EQ(static_cast<int>(ExplorationErrorCode::NAV2_GOAL_ABORT), 7);
   EXPECT_EQ(static_cast<int>(ExplorationErrorCode::NO_ERROR), 8);
+  EXPECT_EQ(static_cast<int>(ExplorationErrorCode::FRONTIER_SEARCH_FAILED), 9);
 }
 
 // Test BTPlugin interface
