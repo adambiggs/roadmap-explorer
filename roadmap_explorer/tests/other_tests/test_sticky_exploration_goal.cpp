@@ -1,6 +1,9 @@
 #include <gtest/gtest.h>
 
 #include <chrono>
+#include <functional>
+#include <map>
+#include <string>
 #include <memory>
 #include <thread>
 #include <vector>
@@ -203,6 +206,72 @@ TEST_F(StickyExplorationGoalTest, BlacklistCoversTheFrontierAfterItsPointMoves)
   ASSERT_TRUE(costs.populateFrontierCosts(request));
   EXPECT_FALSE(moved->isAchievable());
   EXPECT_TRUE(other->isAchievable());
+}
+
+TEST_F(StickyExplorationGoalTest, ClearingVisualizationsReplacesTheFrontierPlanAViewerSaw)
+{
+  auto viewer = std::make_shared<rclcpp::Node>("test_sticky_goal_viewer");
+  std::vector<nav_msgs::msg::Path> plans;
+  std::map<std::string, std::vector<visualization_msgs::msg::MarkerArray>> markers;
+  auto plan_sub = viewer->create_subscription<nav_msgs::msg::Path>(
+    "frontier_roadmap_nav2_plan", 10,
+    [&](nav_msgs::msg::Path::SharedPtr m) {plans.push_back(*m);});
+  std::vector<rclcpp::SubscriptionBase::SharedPtr> marker_subs;
+  for (const std::string topic : {"local_search_area", "frontier_roadmap", "frontier_roadmap_plan"}) {
+    marker_subs.push_back(
+      viewer->create_subscription<visualization_msgs::msg::MarkerArray>(
+        topic, 10, [&markers, topic](visualization_msgs::msg::MarkerArray::SharedPtr m) {
+          markers[topic].push_back(*m);
+        }));
+  }
+  rclcpp::executors::SingleThreadedExecutor executor;
+  executor.add_node(viewer);
+  auto spin_until = [&](const std::function<bool()> & done) {
+      const auto deadline = std::chrono::steady_clock::now() + 5s;
+      while (!done() && std::chrono::steady_clock::now() < deadline) {
+        executor.spin_some(10ms);
+      }
+      return done();
+    };
+  ASSERT_TRUE(spin_until([&] {
+    if (plan_sub->get_publisher_count() == 0) {
+      return false;
+    }
+    for (const auto & sub : marker_subs) {
+      if (sub->get_publisher_count() == 0) {
+        return false;
+      }
+    }
+    return true;
+  }));
+
+  // A plan the viewer is showing, as the optimizer publishes for each goal.
+  auto planner = viewer->create_publisher<nav_msgs::msg::Path>("frontier_roadmap_nav2_plan", 10);
+  ASSERT_TRUE(spin_until([&] {return plan_sub->get_publisher_count() == 2;}));
+  nav_msgs::msg::Path plan;
+  plan.poses.resize(3);
+  planner->publish(plan);
+  ASSERT_TRUE(spin_until([&] {return !plans.empty();}));
+  ASSERT_FALSE(plans.back().poses.empty());
+
+  optimizer_->clearVisualizations("map");
+  FrontierRoadMap::getInstance().clearVisualizations("map");
+  auto deleted_all = [&](const std::string & topic) {
+      const auto it = markers.find(topic);
+      return it != markers.end() && !it->second.back().markers.empty() &&
+             it->second.back().markers.front().action ==
+             visualization_msgs::msg::Marker::DELETEALL;
+    };
+  spin_until([&] {
+    return plans.back().poses.empty() && deleted_all("local_search_area") &&
+           deleted_all("frontier_roadmap") && deleted_all("frontier_roadmap_plan");
+  });
+  ASSERT_GE(plans.size(), 2u);
+  EXPECT_TRUE(plans.back().poses.empty());
+  EXPECT_EQ(plans.back().header.frame_id, "map");
+  EXPECT_TRUE(deleted_all("local_search_area"));
+  EXPECT_TRUE(deleted_all("frontier_roadmap"));
+  EXPECT_TRUE(deleted_all("frontier_roadmap_plan"));
 }
 }  // namespace
 }  // namespace roadmap_explorer

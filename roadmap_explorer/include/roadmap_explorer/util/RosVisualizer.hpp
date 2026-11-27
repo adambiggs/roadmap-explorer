@@ -122,6 +122,10 @@ public:
     const std::vector<FrontierPtr> & frontier_list,
     const std::string & frame_id = "map");
 
+  /// Publish an empty message on every visualization topic, and DELETEALL on
+  /// marker topics, so viewers stop showing a session that has ended.
+  void clearAll(const std::string & frame_id);
+
   void visualizePath(
     const std::string & topic_name,
     nav_msgs::msg::Path & path);

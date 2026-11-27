@@ -352,6 +352,12 @@ void RoadmapExplorationBT::halt()
     LOG_INFO("Waiting for Nav2 goal to be cancelled...");
   }
   LOG_WARN("Goal is terminated");
+  // The session is over and Nav2 has stopped planning for it: stop viewers
+  // showing its plans and frontiers.
+  const auto frame_id = explore_costmap_ros_->getGlobalFrameID();
+  rosVisualizerInstance.clearAll(frame_id);
+  full_path_optimizer_->clearVisualizations(frame_id);
+  frontierRoadmapInstance.clearVisualizations(frame_id);
   // if(save_exploration_data)
   // {
   //   if (sensor_simulator_ == nullptr)

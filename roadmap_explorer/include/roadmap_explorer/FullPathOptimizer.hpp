@@ -139,6 +139,11 @@ public:
   }
 
   /**
+   * @brief Removes the frontier plan and local search area from viewers
+   */
+  void clearVisualizations(const std::string & frame_id);
+
+  /**
    * @brief Clears the cached path distances between frontier pairs
    */
   void clearPlanCache()

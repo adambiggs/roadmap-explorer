@@ -62,6 +62,23 @@ FullPathOptimizer::~FullPathOptimizer()
   frontier_nav2_plan_.reset();
 }
 
+void FullPathOptimizer::clearVisualizations(const std::string & frame_id)
+{
+  const auto stamp = node_->now();
+  nav_msgs::msg::Path path;
+  path.header.frame_id = frame_id;
+  path.header.stamp = stamp;
+  frontier_nav2_plan_->publish(path);
+
+  visualization_msgs::msg::Marker marker;
+  marker.header.frame_id = frame_id;
+  marker.header.stamp = stamp;
+  marker.action = visualization_msgs::msg::Marker::DELETEALL;
+  visualization_msgs::msg::MarkerArray markers;
+  markers.markers.push_back(marker);
+  local_search_area_publisher_->publish(markers);
+}
+
 void FullPathOptimizer::addToMarkerArraySolidPolygon(
   visualization_msgs::msg::MarkerArray & marker_array, geometry_msgs::msg::Point center,
   double radius, std::string ns, float r, float g, float b, int id)
