@@ -91,8 +91,6 @@ public:
 
 private:
   std::shared_ptr<nav2_util::LifecycleNode> bt_node_;
-  // A session ticked since the last halt, so its plans may be on screen.
-  bool session_shown_ = false;
   std::shared_ptr<tf2_ros::Buffer> tf_buffer_;
   std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
 

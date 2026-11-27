@@ -27,7 +27,7 @@ namespace roadmap_explorer
 template<typename ActionT>
 Nav2Interface<ActionT>::Nav2Interface(
   std::shared_ptr<nav2_util::LifecycleNode> node, std::string action_name,
-  std::string update_topic_name, std::string plan_topic_name)
+  std::string update_topic_name)
 {
   node_ = node;
   nav2_goal_state_ = NavGoalStatus::DEFAULT;
@@ -52,22 +52,6 @@ Nav2Interface<ActionT>::Nav2Interface(
   updated_goal_publisher_ = node->create_publisher<geometry_msgs::msg::PoseStamped>(
     update_topic_name, 10);
   updated_goal_publisher_->on_activate();
-  plan_publisher_ = node->create_publisher<nav_msgs::msg::Path>(plan_topic_name, 1);
-  plan_publisher_->on_activate();
-  // Watch the shared plan to know whether the one on screen is the explorer's.
-  rclcpp::SubscriptionOptions plan_options;
-  plan_options.callback_group = nav2_client_callback_group_;
-  plan_subscription_ = node->create_subscription<nav_msgs::msg::Path>(
-    plan_topic_name, 10,
-    [this](const nav_msgs::msg::Path::SharedPtr plan) {
-      std::lock_guard<std::recursive_mutex> lock(goal_state_mutex_);
-      // A plan can arrive before the acceptance response; a rejection undoes this.
-      if (isGoalActive()) {
-        plan_owned_ = plan_owned_ || !plan->poses.empty();
-      } else {
-        plan_owned_ = false;
-      }
-    }, plan_options);
 }
 
 template<typename ActionT>
@@ -75,21 +59,6 @@ Nav2Interface<ActionT>::~Nav2Interface()
 {
   LOG_INFO("Nav2Interface::~Nav2Interface()");
   updated_goal_publisher_->on_deactivate();
-  plan_publisher_->on_deactivate();
-}
-
-template<typename ActionT>
-void Nav2Interface<ActionT>::clearPlan(const std::string & frame_id)
-{
-  std::lock_guard<std::recursive_mutex> lock(goal_state_mutex_);
-  if (!plan_owned_) {
-    return;
-  }
-  plan_owned_ = false;
-  nav_msgs::msg::Path path;
-  path.header.frame_id = frame_id;
-  path.header.stamp = node_->now();
-  plan_publisher_->publish(path);
 }
 
 template<typename ActionT>
@@ -166,8 +135,6 @@ void Nav2Interface<ActionT>::nav2GoalResponseCallback(
   if (!goal_handle) {
     LOG_ERROR("Goal was rejected by Nav2 server");
     nav2_goal_state_ = NavGoalStatus::REJECTED;
-    // Nav2 never planned for a rejected goal, so any plan since is another navigator's.
-    plan_owned_ = false;
   } else {
     LOG_INFO("Goal accepted by Nav2 server, waiting for result");
     current_goal_handle_ = goal_handle;

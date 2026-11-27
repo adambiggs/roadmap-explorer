@@ -52,7 +52,7 @@ protected:
       [this](std::shared_ptr<ServerGoal> goal) { accepted = goal; });
     ParameterHandler::createInstance();
     parameterInstance.setValue<std::string>("explorationBT.nav2_bt_xml", "");
-    client = std::make_unique<TestInterface>(client_node, "navigate", "update", "plan");
+    client = std::make_unique<TestInterface>(client_node, "navigate", "update");
 
     rclcpp::ExecutorOptions exec_options;
     exec_options.context = context;
@@ -179,65 +179,5 @@ TEST_F(NavigationCancel, RejectionReleasesPendingStop)
   EXPECT_EQ(client->getGoalStatus(), Status::REJECTED);
   EXPECT_EQ(goal_requests, 1);
   EXPECT_TRUE(cancelled_goals.empty());
-}
-
-TEST_F(NavigationCancel, ClearPlanReplacesTheLastPlanAViewerSaw)
-{
-  std::vector<nav_msgs::msg::Path> plans;
-  auto viewer = server_node->create_subscription<nav_msgs::msg::Path>(
-    "plan", 10, [&](nav_msgs::msg::Path::SharedPtr plan) { plans.push_back(*plan); });
-  auto planner = server_node->create_publisher<nav_msgs::msg::Path>("plan", 1);
-  ASSERT_TRUE(spinUntil([&] { return viewer->get_publisher_count() == 2; }));
-  ASSERT_TRUE(spinUntil([&] { return planner->get_subscription_count() == 2; }));
-
-  ASSERT_TRUE(client->sendGoal(pose));
-  ASSERT_TRUE(spinUntil([this] { return accepted != nullptr; }));
-  nav_msgs::msg::Path plan;
-  plan.poses.resize(3);
-  planner->publish(plan);
-  ASSERT_TRUE(spinUntil([&] { return !plans.empty(); }));
-  ASSERT_EQ(plans.back().poses.size(), 3u);
-  accepted->succeed(std::make_shared<Navigate::Result>());
-  ASSERT_TRUE(spinUntil([this] { return client->isGoalTerminated(); }));
-  client->clearPlan("map");
-  ASSERT_TRUE(spinUntil([&] { return plans.size() == 2; }));
-  EXPECT_TRUE(plans.back().poses.empty());
-  EXPECT_EQ(plans.back().header.frame_id, "map");
-}
-
-TEST_F(NavigationCancel, ClearPlanLeavesAPlanItsGoalsDidNotProduce)
-{
-  std::vector<nav_msgs::msg::Path> plans;
-  auto viewer = server_node->create_subscription<nav_msgs::msg::Path>(
-    "plan", 10, [&](nav_msgs::msg::Path::SharedPtr plan) { plans.push_back(*plan); });
-  auto other_navigator = server_node->create_publisher<nav_msgs::msg::Path>("plan", 1);
-  ASSERT_TRUE(spinUntil([&] { return viewer->get_publisher_count() == 2; }));
-  ASSERT_TRUE(spinUntil([&] { return other_navigator->get_subscription_count() == 2; }));
-  nav_msgs::msg::Path plan;
-  plan.poses.resize(3);
-  other_navigator->publish(plan);
-  ASSERT_TRUE(spinUntil([&] { return !plans.empty(); }));
-  // Let the interface's own subscription take the plan before its goal starts.
-  const auto settle = std::chrono::steady_clock::now() + 500ms;
-  while (std::chrono::steady_clock::now() < settle) {
-    executor->spin_some(10ms);
-  }
-
-  // No goal at all, then a goal accepted and finished before Nav2 planned.
-  client->clearPlan("map");
-  ASSERT_TRUE(client->sendGoal(pose));
-  ASSERT_TRUE(spinUntil([this] { return accepted != nullptr; }));
-  accepted->succeed(std::make_shared<Navigate::Result>());
-  ASSERT_TRUE(spinUntil([this] { return client->isGoalTerminated(); }));
-  client->clearPlan("map");
-
-  // Another navigator replans while the explorer waits for Nav2, which rejects it.
-  accept = false;
-  ASSERT_TRUE(client->sendGoal(pose));
-  other_navigator->publish(plan);
-  ASSERT_TRUE(spinUntil([this] { return client->getGoalStatus() == Status::REJECTED; }));
-  client->clearPlan("map");
-  EXPECT_FALSE(spinUntil([&] { return plans.back().poses.empty(); }));
-  EXPECT_EQ(plans.back().poses.size(), 3u);
 }
 }  // namespace

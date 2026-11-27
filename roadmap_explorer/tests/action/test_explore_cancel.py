@@ -3,7 +3,6 @@ import os
 import signal
 import subprocess
 import threading
-import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -12,12 +11,11 @@ import domain_coordinator
 import rclpy
 from action_msgs.msg import GoalStatus
 from ament_index_python.packages import get_package_prefix, get_package_share_directory
-from geometry_msgs.msg import PoseStamped, TransformStamped
+from geometry_msgs.msg import TransformStamped
 from lifecycle_msgs.msg import Transition
 from lifecycle_msgs.srv import ChangeState
 from nav2_msgs.action import NavigateToPose
 from nav_msgs.msg import OccupancyGrid
-from nav_msgs.msg import Path as NavPath
 from rclpy.action import ActionClient, ActionServer, CancelResponse, GoalResponse
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
@@ -48,7 +46,6 @@ class TestExploreCancel(unittest.TestCase):
         self.costmap = rclpy.create_node("global_costmap", namespace="/global_costmap")
         self.costmap.declare_parameter("robot_radius", 0.1)
         self.parent = ActionClient(self.node, Explore, "roadmap_explorer")
-        self.nav2_plan = self.planner.create_publisher(NavPath, "plan", 1)
         self.child_requested = threading.Event()
         self.release_response = threading.Event()
         self.child_cancelled = threading.Event()
@@ -111,12 +108,6 @@ class TestExploreCancel(unittest.TestCase):
             node.destroy_node()
         rclpy.shutdown()
 
-    def wait_until(self, done, message):
-        deadline = time.monotonic() + 5
-        while not done():
-            self.assertLess(time.monotonic(), deadline, message)
-            time.sleep(0.05)
-
     def await_result(self, future):
         ready = threading.Event()
         future.add_done_callback(lambda _: ready.set())
@@ -135,11 +126,6 @@ class TestExploreCancel(unittest.TestCase):
         return CancelResponse.ACCEPT
 
     def execute_child(self, goal):
-        # Nav2 plans for an accepted goal, so the explorer owns the plan on screen.
-        plan = NavPath()
-        plan.header.frame_id = "map"
-        plan.poses = [PoseStamped(header=plan.header)] * 2
-        self.nav2_plan.publish(plan)
         if self.release_result.wait(15) and goal.is_cancel_requested:
             goal.canceled()
         else:
@@ -175,67 +161,6 @@ class TestExploreCancel(unittest.TestCase):
         self.assertEqual(self.await_result(result).status, GoalStatus.STATUS_CANCELED)
         self.assertTrue(self.child_terminal.is_set())
         self.assertEqual(self.cancel_id, self.child_id)
-
-    def test_ended_session_clears_its_plan_once(self):
-        plans = []
-        received = threading.Condition()
-
-        def record(plan):
-            with received:
-                plans.append(plan)
-                received.notify_all()
-
-        self.node.create_subscription(NavPath, "plan", record, 10)
-        result, _ = self.cancel_while_child_is_pending(accept=True)
-        self.assertTrue(self.child_cancelled.wait(5), "child was never cancelled")
-        self.release_result.set()
-        self.assertEqual(self.await_result(result).status, GoalStatus.STATUS_CANCELED)
-        with received:
-            self.assertTrue(received.wait_for(
-                lambda: plans and not plans[-1].poses, 5), "ended session left its plan")
-            self.assertEqual(len(plans[-1].poses), 0)
-
-        # Another navigator plans next; deactivating the explorer must leave it shown.
-        other = NavPath()
-        other.header.frame_id = "map"
-        other.poses = [PoseStamped(header=other.header)] * 3
-        planner = self.node.create_publisher(NavPath, "plan", 1)
-        self.wait_until(lambda: planner.get_subscription_count() > 0, "viewer never matched")
-        planner.publish(other)
-        with received:
-            self.assertTrue(received.wait_for(lambda: len(plans[-1].poses) == 3, 5))
-        state = self.node.create_client(ChangeState, "/roadmap_explorer_node/change_state")
-        request = ChangeState.Request()
-        request.transition.id = Transition.TRANSITION_DEACTIVATE
-        self.assertTrue(self.await_result(state.call_async(request)).success)
-        with received:
-            received.wait_for(lambda: len(plans[-1].poses) != 3, 1)
-            self.assertEqual(len(plans[-1].poses), 3)
-
-    def test_rejected_session_leaves_another_navigators_plan(self):
-        plans = []
-        received = threading.Condition()
-
-        def record(plan):
-            with received:
-                plans.append(plan)
-                received.notify_all()
-
-        self.node.create_subscription(NavPath, "plan", record, 10)
-        other = NavPath()
-        other.header.frame_id = "map"
-        other.poses = [PoseStamped(header=other.header)] * 3
-        planner = self.node.create_publisher(NavPath, "plan", 1)
-        self.wait_until(lambda: planner.get_subscription_count() > 0, "viewer never matched")
-        planner.publish(other)
-        with received:
-            self.assertTrue(received.wait_for(lambda: plans, 5))
-
-        result, _ = self.cancel_while_child_is_pending(accept=False)
-        self.assertEqual(self.await_result(result).status, GoalStatus.STATUS_CANCELED)
-        with received:
-            received.wait_for(lambda: len(plans[-1].poses) != 3, 1)
-            self.assertEqual(len(plans[-1].poses), 3)
 
     def test_rejected_child_releases_parent(self):
         result, _ = self.cancel_while_child_is_pending(accept=False)
