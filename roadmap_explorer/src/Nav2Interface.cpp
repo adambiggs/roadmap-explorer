@@ -54,6 +54,19 @@ Nav2Interface<ActionT>::Nav2Interface(
   updated_goal_publisher_->on_activate();
   plan_publisher_ = node->create_publisher<nav_msgs::msg::Path>(plan_topic_name, 1);
   plan_publisher_->on_activate();
+  // Watch the shared plan to know whether the one on screen is the explorer's.
+  rclcpp::SubscriptionOptions plan_options;
+  plan_options.callback_group = nav2_client_callback_group_;
+  plan_subscription_ = node->create_subscription<nav_msgs::msg::Path>(
+    plan_topic_name, 10,
+    [this](const nav_msgs::msg::Path::SharedPtr plan) {
+      std::lock_guard<std::recursive_mutex> lock(goal_state_mutex_);
+      if (isGoalActive()) {
+        plan_owned_ = plan_owned_ || !plan->poses.empty();
+      } else {
+        plan_owned_ = false;
+      }
+    }, plan_options);
 }
 
 template<typename ActionT>
@@ -68,10 +81,10 @@ template<typename ActionT>
 void Nav2Interface<ActionT>::clearPlan(const std::string & frame_id)
 {
   std::lock_guard<std::recursive_mutex> lock(goal_state_mutex_);
-  if (!goal_accepted_since_clear_) {
+  if (!plan_owned_) {
     return;
   }
-  goal_accepted_since_clear_ = false;
+  plan_owned_ = false;
   nav_msgs::msg::Path path;
   path.header.frame_id = frame_id;
   path.header.stamp = node_->now();
@@ -155,8 +168,6 @@ void Nav2Interface<ActionT>::nav2GoalResponseCallback(
   } else {
     LOG_INFO("Goal accepted by Nav2 server, waiting for result");
     current_goal_handle_ = goal_handle;
-    // Only an accepted goal makes Nav2 plan, so only then is /plan the explorer's.
-    goal_accepted_since_clear_ = true;
     if (nav2_goal_state_ == NavGoalStatus::CANCELLING) {
       requestCancel(goal_handle);
     } else {

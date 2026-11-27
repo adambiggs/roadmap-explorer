@@ -48,6 +48,7 @@ class TestExploreCancel(unittest.TestCase):
         self.costmap = rclpy.create_node("global_costmap", namespace="/global_costmap")
         self.costmap.declare_parameter("robot_radius", 0.1)
         self.parent = ActionClient(self.node, Explore, "roadmap_explorer")
+        self.nav2_plan = self.planner.create_publisher(NavPath, "plan", 1)
         self.child_requested = threading.Event()
         self.release_response = threading.Event()
         self.child_cancelled = threading.Event()
@@ -134,6 +135,11 @@ class TestExploreCancel(unittest.TestCase):
         return CancelResponse.ACCEPT
 
     def execute_child(self, goal):
+        # Nav2 plans for an accepted goal, so the explorer owns the plan on screen.
+        plan = NavPath()
+        plan.header.frame_id = "map"
+        plan.poses = [PoseStamped(header=plan.header)] * 2
+        self.nav2_plan.publish(plan)
         if self.release_result.wait(15) and goal.is_cancel_requested:
             goal.canceled()
         else:
@@ -185,7 +191,8 @@ class TestExploreCancel(unittest.TestCase):
         self.release_result.set()
         self.assertEqual(self.await_result(result).status, GoalStatus.STATUS_CANCELED)
         with received:
-            self.assertTrue(received.wait_for(lambda: plans, 5), "ended session left /plan")
+            self.assertTrue(received.wait_for(
+                lambda: plans and not plans[-1].poses, 5), "ended session left its plan")
             self.assertEqual(len(plans[-1].poses), 0)
 
         # Another navigator plans next; deactivating the explorer must leave it shown.
