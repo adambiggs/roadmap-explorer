@@ -16,6 +16,7 @@ from lifecycle_msgs.msg import Transition
 from lifecycle_msgs.srv import ChangeState
 from nav2_msgs.action import NavigateToPose
 from nav_msgs.msg import OccupancyGrid
+from rcl_interfaces.msg import SetParametersResult
 from rclpy.action import ActionClient, ActionServer, CancelResponse, GoalResponse
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
@@ -43,6 +44,9 @@ class TestExploreCancel(unittest.TestCase):
         self.node = rclpy.create_node("explore_cancel_test")
         self.planner = rclpy.create_node("planner_server")
         self.planner.declare_parameter("GridBased.allow_unknown", True)
+        self.reject_allow_unknown = False
+        self.planner.add_on_set_parameters_callback(
+            lambda _: SetParametersResult(successful=not self.reject_allow_unknown))
         self.costmap = rclpy.create_node("global_costmap", namespace="/global_costmap")
         self.costmap.declare_parameter("robot_radius", 0.1)
         self.parent = ActionClient(self.node, Explore, "roadmap_explorer")
@@ -167,3 +171,39 @@ class TestExploreCancel(unittest.TestCase):
         self.assertEqual(self.await_result(result).status, GoalStatus.STATUS_CANCELED)
         self.assertFalse(self.child_cancelled.is_set())
         self.assertFalse(self.child_terminal.is_set())
+
+    def test_failed_initialization_aborts_and_releases_the_server(self):
+        self.reject_allow_unknown = True
+        failed = self.await_result(self.parent.send_goal_async(Explore.Goal()))
+        self.assertTrue(failed.accepted)
+        failed_result = self.await_result(failed.get_result_async())
+        self.assertEqual(failed_result.status, GoalStatus.STATUS_ABORTED)
+        self.assertEqual(failed_result.result.error_code, Explore.Result.UNKNOWN)
+        resume = Explore.Goal()
+        resume.exploration_bringup_mode = Explore.Goal.CONTINUE_FROM_TERMINATED_SESSION
+        resumed = self.await_result(self.parent.send_goal_async(resume))
+        self.assertTrue(resumed.accepted)
+        self.assertEqual(self.await_result(resumed.get_result_async()).status,
+                         GoalStatus.STATUS_ABORTED)
+        self.assertFalse(self.child_requested.is_set(), "the failed tree was ticked")
+        self.reject_allow_unknown = False
+        retry = self.await_result(self.parent.send_goal_async(Explore.Goal()))
+        self.assertTrue(retry.accepted)
+        self.assertTrue(self.child_requested.wait(20), "retry never initialized")
+
+    def test_second_parent_is_rejected_until_the_first_ends(self):
+        first = self.await_result(self.parent.send_goal_async(Explore.Goal()))
+        self.assertTrue(first.accepted)
+        first_result = first.get_result_async()
+        first_terminal = threading.Event()
+        first_result.add_done_callback(lambda _: first_terminal.set())
+        self.assertTrue(self.child_requested.wait(20), "no NavigateToPose request")
+        other = ActionClient(self.node, Explore, "roadmap_explorer")
+        self.assertTrue(other.wait_for_server(timeout_sec=10))
+        self.assertFalse(self.await_result(other.send_goal_async(Explore.Goal())).accepted)
+        self.assert_parent_pending(first_result, first_terminal, "its own cancel")
+        self.await_result(first.cancel_goal_async())
+        self.release_response.set()
+        self.release_result.set()
+        self.assertEqual(self.await_result(first_result).status, GoalStatus.STATUS_CANCELED)
+        self.assertTrue(self.await_result(other.send_goal_async(Explore.Goal())).accepted)

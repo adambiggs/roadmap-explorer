@@ -121,5 +121,21 @@ TEST_F(OneTurnFrontierPlannerTest, ScoresEveryRecoverableFrontierAtItsOriginalGo
   EXPECT_EQ(nearer->getGoalPoint(), nearer_goal);
   EXPECT_EQ(around_corner_->getGoalPoint(), farther_goal);
 }
+
+TEST_F(OneTurnFrontierPlannerTest, CountsFailedRoadmapPlansUntilTaken)
+{
+  auto & graph = FrontierRoadMap::getInstance();
+  graph.takePlanFailures();
+  ASSERT_FALSE(graph.getPlan(start_node_, true, impossible_, true).path_exists);
+  ASSERT_FALSE(graph.getPlan(start_node_, true, around_corner_, true).path_exists);
+
+  auto failures = graph.takePlanFailures();
+  EXPECT_EQ(failures.count, 2u);
+  EXPECT_DOUBLE_EQ(failures.first_start.x, 1.5);
+  EXPECT_DOUBLE_EQ(failures.first_start.y, 1.5);
+  EXPECT_DOUBLE_EQ(failures.first_target.x, 6.5);
+  EXPECT_DOUBLE_EQ(failures.first_target.y, 1.5);
+  EXPECT_EQ(graph.takePlanFailures().count, 0u);
+}
 }  // namespace
 }  // namespace roadmap_explorer

@@ -134,6 +134,16 @@ public:
 
   void loadRoadmapData(const std::string & base_path, const std::string & session_name);
 
+  struct PlanFailures
+  {
+    std::size_t count = 0;
+    geometry_msgs::msg::Point first_start;
+    geometry_msgs::msg::Point first_target;
+  };
+
+  // Returns the roadmap plans that failed since the previous call and starts a new count.
+  PlanFailures takePlanFailures();
+
 private:
   void mapDataCallback(const roadmap_explorer_msgs::msg::MapData & mapData);
 
@@ -155,9 +165,17 @@ private:
     const geometry_msgs::msg::Point & interestPoint,
     std::vector<FrontierPtr> & closestNodeVector, const double radius);
 
-  void getClosestNodeInHashmap(const FrontierPtr & interestNode, FrontierPtr & closestNode);
+  // Returns false, leaving closestNode unchanged, when no node is within 10 m.
+  bool getClosestNodeInHashmap(const FrontierPtr & interestNode, FrontierPtr & closestNode);
 
-  void getClosestNodeInRoadMap(const FrontierPtr & interestNode, FrontierPtr & closestNode);
+  // Returns false, leaving closestNode unchanged, when no roadmap node is within 10 m.
+  bool getClosestNodeInRoadMap(const FrontierPtr & interestNode, FrontierPtr & closestNode);
+
+  // Searches outward ring by ring until no unvisited hash cell can hold a closer eligible node.
+  // Returns false when no eligible node is within 10 m. The caller holds spatial_hash_map_mutex_.
+  bool getClosestEligibleNode(
+    const FrontierPtr & interestNode, FrontierPtr & closestNode,
+    const std::function<bool(const FrontierPtr &)> & eligible, const std::string & map_name);
 
   std::mutex & getRoadmapMutex()
   {
@@ -196,6 +214,7 @@ private:
   std::shared_ptr<nav2_costmap_2d::Costmap2DROS> explore_costmap_ros_;
 
   std::mutex spatial_hash_map_mutex_;
+  PlanFailures plan_failures_;  // guarded by roadmap_mutex_
   std::unordered_map<std::pair<int, int>, std::vector<FrontierPtr>, spatialHash> spatial_hash_map_;
 
   std::queue<FrontierPtr> no_kf_parent_queue_;

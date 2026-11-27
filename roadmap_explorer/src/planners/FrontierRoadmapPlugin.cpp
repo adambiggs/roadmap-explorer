@@ -108,7 +108,7 @@ void PluginFrontierRoadmap::scoreFrontier(const geometry_msgs::msg::Pose & start
 
   // if path does not exist, set to unachievable
   if (path_length.path_exists == false) {
-    LOG_INFO("Plan not found for " << goal_point_w << " path does not exist.");
+    LOG_DEBUG("Plan not found for " << goal_point_w << " path does not exist.");
     goal_point_w->setAchievability(false);
     goal_point_w->setPathLength(std::numeric_limits<double>::max());
     goal_point_w->setPathLengthInM(std::numeric_limits<double>::max());

@@ -52,7 +52,8 @@ protected:
       [this](std::shared_ptr<ServerGoal> goal) { accepted = goal; });
     ParameterHandler::createInstance();
     parameterInstance.setValue<std::string>("explorationBT.nav2_bt_xml", "");
-    client = std::make_unique<TestInterface>(client_node, "navigate", "update");
+    client_group = client_node->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+    client = std::make_unique<TestInterface>(client_node, "navigate", "update", client_group);
 
     rclcpp::ExecutorOptions exec_options;
     exec_options.context = context;
@@ -90,6 +91,7 @@ protected:
   rclcpp::Context::SharedPtr context;
   rclcpp::Node::SharedPtr server_node;
   std::shared_ptr<nav2_util::LifecycleNode> client_node;
+  rclcpp::CallbackGroup::SharedPtr client_group;
   rclcpp_action::Server<Navigate>::SharedPtr action;
   std::shared_ptr<ServerGoal> accepted;
   std::unique_ptr<TestInterface> client;

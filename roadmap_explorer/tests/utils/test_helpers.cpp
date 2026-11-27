@@ -424,6 +424,19 @@ TEST_F(HelpersTest, GetTracedCellsNegativeCoordinates)
     EXPECT_FALSE(result);  // Should fail due to out of bounds start point
 }
 
+TEST_F(HelpersTest, GetTracedCellsSeesLethalCellInBorderRow)
+{
+    // A lethal cell in the first row must be seen by a ray traced along that row.
+    costmap_->setCost(4, 0, nav2_costmap_2d::LETHAL_OBSTACLE);
+    std::vector<nav2_costmap_2d::MapLocation> cells;
+    RayTracedCells ray_tracer(costmap_.get(), cells, 254, 254, 0, 253);
+
+    bool result = getTracedCells(0.5, 0.5, 9.5, 0.5, ray_tracer, 10.0, costmap_.get());
+
+    EXPECT_TRUE(result);
+    EXPECT_TRUE(ray_tracer.hasHitObstacle());
+}
+
 // ===================================  Tests for isCircleFootprintInLethal function  ===================================
 
 TEST_F(HelpersTest, IsCircleFootprintInLethalFreeSpace) 

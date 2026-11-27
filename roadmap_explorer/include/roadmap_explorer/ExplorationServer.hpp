@@ -90,11 +90,16 @@ protected:
   std::shared_ptr<RoadmapExplorationBT> exploration_bt_;
   std::mutex exploration_bt_mutex_;
   bool server_active_{false};
+  // Set when a goal's execution starts and cleared once that goal is terminal: one parent owns the tree.
+  // session_mutex_ guards it, and is held across the terminal transition.
+  std::mutex session_mutex_;
+  bool session_owned_{false};
   bool localisation_only_mode_{false};
 
   rclcpp::executors::MultiThreadedExecutor::SharedPtr executor_;
   rclcpp::CallbackGroup::SharedPtr action_server_cb_group_;
   rclcpp::CallbackGroup::SharedPtr service_cb_group_;
+  rclcpp::CallbackGroup::SharedPtr nav2_client_cb_group_;
   std::shared_ptr<nav2_util::LifecycleNode> node_;
 };
 

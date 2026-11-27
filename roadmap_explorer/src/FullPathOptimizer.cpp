@@ -89,39 +89,24 @@ double FullPathOptimizer::calculatePathLength(std::vector<FrontierPtr> & path)
 {
   double totalLength = 0.0;
   for (size_t i = 0; i < path.size() - 1; ++i) {
-    // LOG_DEBUG("Inside loop i =" << i << "limit " << path.size());
     LOG_TRACE("Need distance between: " << path[i] << " , " << path[i + 1]);
     auto it = frontier_pair_distances_.find(FrontierPair(path[i], path[i + 1]));
-    if (it != frontier_pair_distances_.end()) {
-      LOG_TRACE(
-        "Using cache value bw " << path[i] << " to " << path[i + 1] << ". The value is: " <<
-          it->second.path_length_m);
-      totalLength += it->second.path_length_m;
-      continue;
+    if (it == frontier_pair_distances_.end()) {
+      it = frontier_pair_distances_.find(FrontierPair(path[i + 1], path[i]));
     }
-    auto it2 = frontier_pair_distances_.find(FrontierPair(path[i + 1], path[i]));
-    if (it2 != frontier_pair_distances_.end()) {
-      LOG_TRACE(
-        "Using cache value bw " << path[i + 1] << " to " << path[i] << ". The value is: " <<
-          it2->second.path_length_m);
-      totalLength += it2->second.path_length_m;
-      continue;
-    }
-    LOG_TRACE("Could not find path in cache. Computing bw " << path[i] << " to " << path[i + 1]);
-    auto current_length = frontierRoadmapInstance.getPlan(path[i], true, path[i + 1], true);
-    // LOG_DEBUG(current_length);
-    if (current_length.path_exists == true) {
-      totalLength += current_length.path_length_m;
+    if (it == frontier_pair_distances_.end()) {
+      LOG_TRACE("Could not find path in cache. Computing bw " << path[i] << " to " << path[i + 1]);
+      auto current_length = frontierRoadmapInstance.getPlan(path[i], true, path[i + 1], true);
       frontier_pair_distances_[FrontierPair(path[i], path[i + 1])] = current_length;
       std::reverse(current_length.path.begin(), current_length.path.end());
-      frontier_pair_distances_[FrontierPair(path[i + 1], path[i])] = current_length;
-    } else if (current_length.path_exists == false) {
-      // set it to a large value since path could not be found.
-      totalLength += local_frontier_search_radius * PATH_NOT_FOUND_PENALTY_MULTIPLIER;
-      frontier_pair_distances_[FrontierPair(path[i], path[i + 1])] = current_length;
-      std::reverse(current_length.path.begin(), current_length.path.end());
-      frontier_pair_distances_[FrontierPair(path[i + 1], path[i])] = current_length;
+      it = frontier_pair_distances_.insert_or_assign(
+        FrontierPair(path[i + 1], path[i]), current_length).first;
     }
+    const RoadmapPlanResult & leg = it->second;
+    LOG_TRACE("Leg exists: " << leg.path_exists << ", length: " << leg.path_length_m);
+    // A leg with no path costs the penalty whether or not it came from the cache.
+    totalLength += leg.path_exists ?
+      leg.path_length_m : local_frontier_search_radius * PATH_NOT_FOUND_PENALTY_MULTIPLIER;
   }
   return totalLength;
 }

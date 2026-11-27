@@ -15,6 +15,7 @@
 #endif
 
 #include "rclcpp/rclcpp.hpp"
+#include "sensor_msgs/msg/laser_scan.hpp"
 #include "nav2_util/lifecycle_node.hpp"
 #include "nav2_costmap_2d/costmap_2d_ros.hpp"
 #include "roadmap_explorer/util/EventLogger.hpp"
@@ -118,6 +119,47 @@ TEST_F(BTPluginIntegrationTest, RebuiltBootstrapTreeReadsUpdatedParameters)
   plugin.registerNodes(second_factory, context);
   auto tree = second_factory.createTreeFromText(xml);
   EXPECT_EQ(tree.rootNode()->executeTick(), BT::NodeStatus::SUCCESS);
+}
+
+TEST_F(BTPluginIntegrationTest, ScanDeliveredAfterBootstrapTreeIsDestroyed)
+{
+  // An executor holds the subscription while it runs a callback, so a scan can be delivered
+  // after the tree that created it is destroyed. AddressSanitizer reports a callback that
+  // writes into the destroyed tree.
+  auto node_options = rclcpp::NodeOptions();
+  node_options.arguments({
+    "--ros-args", "-r", "/cmd_vel_explore:=/bootstrap_teardown/cmd_vel",
+    "-r", "/scan:=/bootstrap_teardown/scan"});
+  const auto context = createContext();
+  context->node = std::make_shared<nav2_util::LifecycleNode>(
+    "test_bootstrap_teardown_node", "", node_options);
+  BootstrapRandomWalkPlugin plugin;
+  rclcpp::SubscriptionBase::SharedPtr in_flight;
+  {
+    BT::BehaviorTreeFactory factory;
+    plugin.registerNodes(factory, context);
+    auto tree = factory.createTreeFromText(R"(
+      <root BTCPP_format="4">
+        <BehaviorTree ID="BootstrapTeardown">
+          <BootstrapRandomWalk bootstrap_completed="{bootstrap_completed}" />
+        </BehaviorTree>
+      </root>
+    )");
+    context->node->get_node_base_interface()->for_each_callback_group(
+      [&in_flight](const rclcpp::CallbackGroup::SharedPtr & group) {
+        group->find_subscription_ptrs_if(
+          [&in_flight](const rclcpp::SubscriptionBase::SharedPtr & subscription) {
+            if (std::string(subscription->get_topic_name()) == "/bootstrap_teardown/scan") {
+              in_flight = subscription;
+            }
+            return false;
+          });
+      });
+  }
+  ASSERT_NE(in_flight, nullptr);
+
+  std::shared_ptr<void> scan = std::make_shared<sensor_msgs::msg::LaserScan>();
+  EXPECT_NO_THROW(in_flight->handle_message(scan, rclcpp::MessageInfo()));
 }
 
 // Test plugin loading through pluginlib

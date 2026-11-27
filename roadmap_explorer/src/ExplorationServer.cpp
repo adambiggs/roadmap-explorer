@@ -42,6 +42,10 @@ nav2_util::CallbackReturn ExplorationServer::on_configure(const rclcpp_lifecycle
 {
   LOG_INFO("Configured " << get_name());
   node_ = shared_from_this();
+  // Created once per node: each behavior tree's Nav2 client uses it.
+  if (!nav2_client_cb_group_) {
+    nav2_client_cb_group_ = create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+  }
 
   nav2_util::declare_parameter_if_not_declared(node_, "localisation_only_mode", rclcpp::ParameterValue(false));
   node_->get_parameter("localisation_only_mode", localisation_only_mode_);
@@ -130,6 +134,11 @@ rclcpp_action::GoalResponse ExplorationServer::handle_goal(
     LOG_WARN("Received goal while inactive -> rejecting");
     return rclcpp_action::GoalResponse::REJECT;
   }
+  std::lock_guard<std::mutex> lock(session_mutex_);
+  if (session_owned_) {
+    LOG_WARN("Received goal while another goal owns the exploration session -> rejecting");
+    return rclcpp_action::GoalResponse::REJECT;
+  }
   LOG_INFO("Accepted new ExploreArea goal");
   return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
 }
@@ -151,8 +160,13 @@ rclcpp_action::CancelResponse ExplorationServer::handle_cancel(
 void ExplorationServer::handle_accepted(
   const std::shared_ptr<GoalHandleExplore> goal_handle)
 {
-  (void)goal_handle;
   LOG_INFO("Goal accepted, starting execution");
+  {
+    // Claimed here, not in handle_goal: a goal whose response fails to send never gets here.
+    // The mutually exclusive action callback group finishes one goal's admission before the next.
+    std::lock_guard<std::mutex> lock(session_mutex_);
+    session_owned_ = true;
+  }
   // Spin the work off to a new thread so we don’t block the executor
   std::thread{std::bind(&ExplorationServer::execute, this, goal_handle)}.detach();
 }
@@ -166,8 +180,15 @@ void ExplorationServer::publish_feedback(
 
 bool ExplorationServer::make_exploration_bt(bool localisation_only_mode)
 {
-  exploration_bt_ = std::make_shared<RoadmapExplorationBT>(node_, localisation_only_mode);
-  return exploration_bt_->makeBTNodes();
+  // Keep a tree that failed bringup out of exploration_bt_, so no later goal can run it.
+  auto exploration_bt = std::make_shared<RoadmapExplorationBT>(
+    node_, localisation_only_mode, nav2_client_cb_group_);
+  if (!exploration_bt->makeBTNodes()) {
+    exploration_bt->halt();
+    return false;
+  }
+  exploration_bt_ = exploration_bt;
+  return true;
 }
 
 void ExplorationServer::execute(const std::shared_ptr<GoalHandleExplore> goal_handle)
@@ -180,11 +201,17 @@ void ExplorationServer::execute(const std::shared_ptr<GoalHandleExplore> goal_ha
     switch (goal_handle->get_goal()->exploration_bringup_mode) {
       case ExploreAction::Goal::NEW_EXPLORATION_SESSION:
         {
-          std::lock_guard<std::mutex> lock(exploration_bt_mutex_);
-          exploration_bt_.reset();
-          if(!make_exploration_bt(localisation_only_mode_))
+          bool initialized;
+          {
+            std::lock_guard<std::mutex> lock(exploration_bt_mutex_);
+            exploration_bt_.reset();
+            initialized = make_exploration_bt(localisation_only_mode_);
+          }
+          // terminateGoal takes exploration_bt_mutex_ itself.
+          if(!initialized)
           {
             result->success = false;
+            result->error_code = ExploreActionResult::UNKNOWN;
             terminateGoal(ActionTerminalState::ABORT, goal_handle, result);
             return;
           }
@@ -206,15 +233,23 @@ void ExplorationServer::execute(const std::shared_ptr<GoalHandleExplore> goal_ha
         // throw RoadmapExplorerException("Continue from saved session is not implemented yet.");
         if(localisation_only_mode_)
         {
-          std::lock_guard<std::mutex> lock(exploration_bt_mutex_);
-          exploration_bt_.reset();
-          if(!make_exploration_bt(localisation_only_mode_))
+          bool initialized;
+          {
+            std::lock_guard<std::mutex> lock(exploration_bt_mutex_);
+            exploration_bt_.reset();
+            initialized = make_exploration_bt(localisation_only_mode_);
+            if(initialized)
+            {
+              exploration_bt_->loadExplorationMetaData(goal_handle->get_goal()->session_name.data, goal_handle->get_goal()->load_from_folder.data);
+            }
+          }
+          if(!initialized)
           {
             result->success = false;
+            result->error_code = ExploreActionResult::UNKNOWN;
             terminateGoal(ActionTerminalState::ABORT, goal_handle, result);
             return;
           }
-          exploration_bt_->loadExplorationMetaData(goal_handle->get_goal()->session_name.data, goal_handle->get_goal()->load_from_folder.data);
         }
         else
         {
@@ -279,7 +314,8 @@ void ExplorationServer::terminateGoal(
       exploration_bt_->halt();
     }
   }
-
+  // A goal arriving now waits for this goal's terminal state before it can take the session.
+  std::lock_guard<std::mutex> lock(session_mutex_);
   switch (terminal_state) {
     case ActionTerminalState::SUCCEED:
       goal_handle->succeed(result);
@@ -291,6 +327,7 @@ void ExplorationServer::terminateGoal(
       goal_handle->canceled(result);
       break;
   }
+  session_owned_ = false;
 }
 
 void ExplorationServer::handle_save_map_and_roadmap(
