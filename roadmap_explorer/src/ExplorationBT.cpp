@@ -19,6 +19,8 @@
     under the License.
 */
 
+#include <algorithm>
+
 #include <roadmap_explorer/ExplorationBT.hpp>
 
 namespace roadmap_explorer
@@ -105,10 +107,13 @@ bool RoadmapExplorationBT::incrementFrontierSearchDistance()
   auto current_frontier_search_distance = blackboard->get<double>("current_frontier_search_distance");
   double increment_value = parameterInstance.getValue<double>("frontierSearch.increment_search_distance_by");
   LOG_WARN("Incrementing frontier search distance by " << increment_value);
-  auto distance_to_set = current_frontier_search_distance + increment_value;
-  if (distance_to_set > parameterInstance.getValue<double>("frontierSearch.max_permissable_frontier_search_distance")) {
+  auto max_distance = parameterInstance.getValue<double>(
+    "frontierSearch.max_permissable_frontier_search_distance");
+  if (current_frontier_search_distance >= max_distance) {
+    // The search just ran at the maximum distance.
     return false;
   }
+  auto distance_to_set = std::min(current_frontier_search_distance + increment_value, max_distance);
   blackboard->set<double>("current_frontier_search_distance", distance_to_set);
   return true;
 }
@@ -309,6 +314,10 @@ uint16_t RoadmapExplorationBT::tickOnceWithSleep(const std::function<bool()> & c
       } else {
         LOG_WARN("Continuing exploration despite Nav2 goal abort. The frontier was blacklisted.");
       }
+    } else if (blackboard->get<ExplorationErrorCode>("error_code_id") ==
+      ExplorationErrorCode::FRONTIER_SEARCH_FAILED)
+    {
+      LOG_ERROR("Behavior Tree tick returned FAILURE because the frontier search could not run.");
     } else if (blackboard->get<ExplorationErrorCode>("error_code_id") ==
       ExplorationErrorCode::NO_ERROR)
     {
