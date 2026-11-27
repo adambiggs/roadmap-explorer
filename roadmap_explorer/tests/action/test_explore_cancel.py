@@ -3,6 +3,7 @@ import os
 import signal
 import subprocess
 import threading
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -109,6 +110,12 @@ class TestExploreCancel(unittest.TestCase):
             node.destroy_node()
         rclpy.shutdown()
 
+    def wait_until(self, done, message):
+        deadline = time.monotonic() + 5
+        while not done():
+            self.assertLess(time.monotonic(), deadline, message)
+            time.sleep(0.05)
+
     def await_result(self, future):
         ready = threading.Event()
         future.add_done_callback(lambda _: ready.set())
@@ -186,10 +193,10 @@ class TestExploreCancel(unittest.TestCase):
         other.header.frame_id = "map"
         other.poses = [PoseStamped(header=other.header)] * 3
         planner = self.node.create_publisher(NavPath, "plan", 1)
+        self.wait_until(lambda: planner.get_subscription_count() > 0, "viewer never matched")
+        planner.publish(other)
         with received:
-            # Publish until discovery completes and the viewer has the plan.
-            self.assertTrue(received.wait_for(
-                lambda: planner.publish(other) or len(plans[-1].poses) == 3, 5))
+            self.assertTrue(received.wait_for(lambda: len(plans[-1].poses) == 3, 5))
         state = self.node.create_client(ChangeState, "/roadmap_explorer_node/change_state")
         request = ChangeState.Request()
         request.transition.id = Transition.TRANSITION_DEACTIVATE
