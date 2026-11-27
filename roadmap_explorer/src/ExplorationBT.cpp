@@ -265,7 +265,10 @@ uint16_t RoadmapExplorationBT::tickOnceWithSleep(const std::function<bool()> & c
     {
       LOG_ERROR(
         "Behavior Tree tick returned FAILURE due to no frontiers in current search radius.");
-      incrementFrontierSearchDistance();
+      if (!incrementFrontierSearchDistance()) {
+        LOG_INFO("No frontiers within the maximum search distance: exploration is complete.");
+        return_value = ExploreActionResult::NO_MORE_REACHABLE_FRONTIERS;
+      }
     } else if (blackboard->get<ExplorationErrorCode>("error_code_id") ==
       ExplorationErrorCode::MAX_FRONTIER_SEARCH_RADIUS_EXCEEDED)
     {
@@ -278,7 +281,11 @@ uint16_t RoadmapExplorationBT::tickOnceWithSleep(const std::function<bool()> & c
       ExplorationErrorCode::NO_ACHIEVABLE_FRONTIERS_LEFT)
     {
       LOG_ERROR("Behavior Tree tick returned FAILURE due to no achievable frontiers left.");
-      incrementFrontierSearchDistance();
+      if (!incrementFrontierSearchDistance()) {
+        LOG_INFO(
+          "No achievable frontiers within the maximum search distance: exploration is complete.");
+        return_value = ExploreActionResult::NO_MORE_REACHABLE_FRONTIERS;
+      }
     } else if (blackboard->get<ExplorationErrorCode>("error_code_id") ==
       ExplorationErrorCode::FULL_PATH_OPTIMIZATION_FAILURE)
     {
