@@ -27,7 +27,7 @@ namespace roadmap_explorer
 template<typename ActionT>
 Nav2Interface<ActionT>::Nav2Interface(
   std::shared_ptr<nav2_util::LifecycleNode> node, std::string action_name,
-  std::string update_topic_name)
+  std::string update_topic_name, std::string plan_topic_name)
 {
   node_ = node;
   nav2_goal_state_ = NavGoalStatus::DEFAULT;
@@ -52,6 +52,8 @@ Nav2Interface<ActionT>::Nav2Interface(
   updated_goal_publisher_ = node->create_publisher<geometry_msgs::msg::PoseStamped>(
     update_topic_name, 10);
   updated_goal_publisher_->on_activate();
+  plan_publisher_ = node->create_publisher<nav_msgs::msg::Path>(plan_topic_name, 1);
+  plan_publisher_->on_activate();
 }
 
 template<typename ActionT>
@@ -59,6 +61,16 @@ Nav2Interface<ActionT>::~Nav2Interface()
 {
   LOG_INFO("Nav2Interface::~Nav2Interface()");
   updated_goal_publisher_->on_deactivate();
+  plan_publisher_->on_deactivate();
+}
+
+template<typename ActionT>
+void Nav2Interface<ActionT>::clearPlan(const std::string & frame_id)
+{
+  nav_msgs::msg::Path path;
+  path.header.frame_id = frame_id;
+  path.header.stamp = node_->now();
+  plan_publisher_->publish(path);
 }
 
 template<typename ActionT>

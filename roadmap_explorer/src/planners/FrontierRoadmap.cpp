@@ -33,7 +33,8 @@ FrontierRoadMap::FrontierRoadMap(
   std::shared_ptr<nav2_costmap_2d::Costmap2DROS> explore_costmap_ros,
   std::shared_ptr<nav2_util::LifecycleNode> node_ptr)
 : costmap_(explore_costmap_ros->getCostmap()),
-  explore_costmap_ros_(explore_costmap_ros)
+  explore_costmap_ros_(explore_costmap_ros),
+  node_(node_ptr)
 {
   // the below getValue cannot be changed at runtime. Hence they are not called anywhere else.
   max_graph_reconstruction_distance_ = parameterInstance.getValue<double>(
@@ -66,6 +67,18 @@ FrontierRoadMap::FrontierRoadMap(
     "/clicked_point", 10,
     std::bind(&FrontierRoadMap::clickedPointCallback, this, std::placeholders::_1));
   // RosVisualizerInstance = std::make_shared<RosVisualizer>(node_, costmap_);
+}
+
+void FrontierRoadMap::clearVisualizations(const std::string & frame_id)
+{
+  visualization_msgs::msg::Marker marker;
+  marker.header.frame_id = frame_id;
+  marker.header.stamp = node_->now();
+  marker.action = visualization_msgs::msg::Marker::DELETEALL;
+  visualization_msgs::msg::MarkerArray markers;
+  markers.markers.push_back(marker);
+  marker_pub_roadmap_->publish(markers);
+  marker_pub_plan_->publish(markers);
 }
 
 FrontierRoadMap::~FrontierRoadMap()

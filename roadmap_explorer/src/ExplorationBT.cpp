@@ -65,7 +65,8 @@ RoadmapExplorationBT::RoadmapExplorationBT(std::shared_ptr<nav2_util::LifecycleN
   nav2_interface_ = std::make_shared<Nav2Interface<nav2_msgs::action::NavigateToPose>>(
     bt_node_,
     "navigate_to_pose",
-    "goal_update");
+    "goal_update",
+    "plan");
 
   cost_assigner_ptr_ = std::make_shared<CostAssigner>(explore_costmap_ros_, bt_node_);
   
@@ -346,14 +347,19 @@ void RoadmapExplorationBT::halt()
     sensor_simulator_->stopMapping();
   }
   explore_costmap_ros_->pause();
-  // The session is over: stop viewers showing its plan and frontiers.
-  rosVisualizerInstance.clearAll(explore_costmap_ros_->getGlobalFrameID());
   nav2_interface_->cancelAllGoals();
   while (!nav2_interface_->isGoalTerminated() && rclcpp::ok()) {
     rclcpp::sleep_for(std::chrono::milliseconds(100));
     LOG_INFO("Waiting for Nav2 goal to be cancelled...");
   }
   LOG_WARN("Goal is terminated");
+  // The session is over and Nav2 has stopped planning for it: stop viewers
+  // showing its plans and frontiers.
+  const auto frame_id = explore_costmap_ros_->getGlobalFrameID();
+  rosVisualizerInstance.clearAll(frame_id);
+  full_path_optimizer_->clearVisualizations(frame_id);
+  frontierRoadmapInstance.clearVisualizations(frame_id);
+  nav2_interface_->clearPlan(frame_id);
   // if(save_exploration_data)
   // {
   //   if (sensor_simulator_ == nullptr)

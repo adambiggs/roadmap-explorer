@@ -30,6 +30,7 @@
 #include <rclcpp_action/rclcpp_action.hpp>
 
 #include <geometry_msgs/msg/pose_with_covariance_stamped.hpp>
+#include <nav_msgs/msg/path.hpp>
 #include <tf2_ros/buffer.h>
 
 #include <nav2_msgs/action/navigate_to_pose.hpp>
@@ -68,12 +69,14 @@ public:
   using GoalHandle = rclcpp_action::ClientGoalHandle<ActionT>;
   explicit Nav2Interface(
     std::shared_ptr<nav2_util::LifecycleNode> node, std::string action_name,
-    std::string update_topic_name);
+    std::string update_topic_name, std::string plan_topic_name);
   ~Nav2Interface();
   void goalPoseCallback(const geometry_msgs::msg::PoseStamped::SharedPtr msg);
   void cancelAllGoals();
   virtual bool sendGoal(geometry_msgs::msg::PoseStamped & pose);
   void sendUpdatedGoal(geometry_msgs::msg::PoseStamped pose);
+  // Nav2 publishes its plan only while it navigates, so viewers keep the last one.
+  void clearPlan(const std::string & frame_id);
   NavGoalStatus getGoalStatus()
   {
     std::lock_guard<std::recursive_mutex> lock(goal_state_mutex_);
@@ -121,6 +124,7 @@ protected:
   rclcpp::CallbackGroup::SharedPtr nav2_client_callback_group_;
   rclcpp_lifecycle::LifecyclePublisher<geometry_msgs::msg::PoseStamped>::SharedPtr
     updated_goal_publisher_;
+  rclcpp_lifecycle::LifecyclePublisher<nav_msgs::msg::Path>::SharedPtr plan_publisher_;
   std::recursive_mutex goal_state_mutex_;
   std::mutex nav2_feedback_mutex_;
   NavGoalStatus nav2_goal_state_;

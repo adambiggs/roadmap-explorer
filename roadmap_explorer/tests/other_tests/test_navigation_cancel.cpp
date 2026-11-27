@@ -52,7 +52,7 @@ protected:
       [this](std::shared_ptr<ServerGoal> goal) { accepted = goal; });
     ParameterHandler::createInstance();
     parameterInstance.setValue<std::string>("explorationBT.nav2_bt_xml", "");
-    client = std::make_unique<TestInterface>(client_node, "navigate", "update");
+    client = std::make_unique<TestInterface>(client_node, "navigate", "update", "plan");
 
     rclcpp::ExecutorOptions exec_options;
     exec_options.context = context;
@@ -179,5 +179,24 @@ TEST_F(NavigationCancel, RejectionReleasesPendingStop)
   EXPECT_EQ(client->getGoalStatus(), Status::REJECTED);
   EXPECT_EQ(goal_requests, 1);
   EXPECT_TRUE(cancelled_goals.empty());
+}
+
+TEST_F(NavigationCancel, ClearPlanReplacesTheLastPlanAViewerSaw)
+{
+  std::vector<nav_msgs::msg::Path> plans;
+  auto viewer = server_node->create_subscription<nav_msgs::msg::Path>(
+    "plan", 10, [&](nav_msgs::msg::Path::SharedPtr plan) { plans.push_back(*plan); });
+  auto planner = server_node->create_publisher<nav_msgs::msg::Path>("plan", 1);
+  ASSERT_TRUE(spinUntil([&] { return viewer->get_publisher_count() == 2; }));
+  nav_msgs::msg::Path plan;
+  plan.poses.resize(3);
+  planner->publish(plan);
+  ASSERT_TRUE(spinUntil([&] { return !plans.empty(); }));
+  ASSERT_EQ(plans.back().poses.size(), 3u);
+
+  client->clearPlan("map");
+  ASSERT_TRUE(spinUntil([&] { return plans.size() == 2; }));
+  EXPECT_TRUE(plans.back().poses.empty());
+  EXPECT_EQ(plans.back().header.frame_id, "map");
 }
 }  // namespace

@@ -110,6 +110,11 @@ public:
 
   void publishRoadMap();
 
+  /**
+   * @brief Removes the roadmap and plan markers from viewers
+   */
+  void clearVisualizations(const std::string & frame_id);
+
   std::size_t countTotalItemsInSpatialMap();
 
   void reConstructGraph(bool entireGraph, bool optimizeRoadmap);
