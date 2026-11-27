@@ -134,7 +134,8 @@ protected:
   typename rclcpp_action::ClientGoalHandle<ActionT>::SharedPtr current_goal_handle_;
   bool shutting_down_ = false;
   rclcpp::Subscription<nav_msgs::msg::Path>::SharedPtr plan_subscription_;
-  // The last plan on the topic arrived while this interface's goal was active.
+  // The last plan on the topic arrived while this interface's goal was active
+  // and Nav2 did not reject it.
   bool plan_owned_ = false;
 
   std::shared_ptr<nav2_util::LifecycleNode> node_;

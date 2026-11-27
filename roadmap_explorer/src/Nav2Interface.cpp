@@ -61,6 +61,7 @@ Nav2Interface<ActionT>::Nav2Interface(
     plan_topic_name, 10,
     [this](const nav_msgs::msg::Path::SharedPtr plan) {
       std::lock_guard<std::recursive_mutex> lock(goal_state_mutex_);
+      // A plan can arrive before the acceptance response; a rejection undoes this.
       if (isGoalActive()) {
         plan_owned_ = plan_owned_ || !plan->poses.empty();
       } else {
@@ -165,6 +166,8 @@ void Nav2Interface<ActionT>::nav2GoalResponseCallback(
   if (!goal_handle) {
     LOG_ERROR("Goal was rejected by Nav2 server");
     nav2_goal_state_ = NavGoalStatus::REJECTED;
+    // Nav2 never planned for a rejected goal, so any plan since is another navigator's.
+    plan_owned_ = false;
   } else {
     LOG_INFO("Goal accepted by Nav2 server, waiting for result");
     current_goal_handle_ = goal_handle;

@@ -230,7 +230,14 @@ TEST_F(NavigationCancel, ClearPlanLeavesAPlanItsGoalsDidNotProduce)
   accepted->succeed(std::make_shared<Navigate::Result>());
   ASSERT_TRUE(spinUntil([this] { return client->isGoalTerminated(); }));
   client->clearPlan("map");
-  EXPECT_FALSE(spinUntil([&] { return plans.size() > 1; }));
+
+  // Another navigator replans while the explorer waits for Nav2, which rejects it.
+  accept = false;
+  ASSERT_TRUE(client->sendGoal(pose));
+  other_navigator->publish(plan);
+  ASSERT_TRUE(spinUntil([this] { return client->getGoalStatus() == Status::REJECTED; }));
+  client->clearPlan("map");
+  EXPECT_FALSE(spinUntil([&] { return plans.back().poses.empty(); }));
   EXPECT_EQ(plans.back().poses.size(), 3u);
 }
 }  // namespace
