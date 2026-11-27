@@ -11,11 +11,12 @@ import domain_coordinator
 import rclpy
 from action_msgs.msg import GoalStatus
 from ament_index_python.packages import get_package_prefix, get_package_share_directory
-from geometry_msgs.msg import TransformStamped
+from geometry_msgs.msg import PoseStamped, TransformStamped
 from lifecycle_msgs.msg import Transition
 from lifecycle_msgs.srv import ChangeState
 from nav2_msgs.action import NavigateToPose
 from nav_msgs.msg import OccupancyGrid
+from nav_msgs.msg import Path as NavPath
 from rclpy.action import ActionClient, ActionServer, CancelResponse, GoalResponse
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
@@ -161,6 +162,41 @@ class TestExploreCancel(unittest.TestCase):
         self.assertEqual(self.await_result(result).status, GoalStatus.STATUS_CANCELED)
         self.assertTrue(self.child_terminal.is_set())
         self.assertEqual(self.cancel_id, self.child_id)
+
+    def test_ended_session_clears_its_plan_once(self):
+        plans = []
+        received = threading.Condition()
+
+        def record(plan):
+            with received:
+                plans.append(plan)
+                received.notify_all()
+
+        self.node.create_subscription(NavPath, "plan", record, 10)
+        result, _ = self.cancel_while_child_is_pending(accept=True)
+        self.assertTrue(self.child_cancelled.wait(5), "child was never cancelled")
+        self.release_result.set()
+        self.assertEqual(self.await_result(result).status, GoalStatus.STATUS_CANCELED)
+        with received:
+            self.assertTrue(received.wait_for(lambda: plans, 5), "ended session left /plan")
+            self.assertEqual(len(plans[-1].poses), 0)
+
+        # Another navigator plans next; deactivating the explorer must leave it shown.
+        other = NavPath()
+        other.header.frame_id = "map"
+        other.poses = [PoseStamped(header=other.header)] * 3
+        planner = self.node.create_publisher(NavPath, "plan", 1)
+        with received:
+            # Publish until discovery completes and the viewer has the plan.
+            self.assertTrue(received.wait_for(
+                lambda: planner.publish(other) or len(plans[-1].poses) == 3, 5))
+        state = self.node.create_client(ChangeState, "/roadmap_explorer_node/change_state")
+        request = ChangeState.Request()
+        request.transition.id = Transition.TRANSITION_DEACTIVATE
+        self.assertTrue(self.await_result(state.call_async(request)).success)
+        with received:
+            received.wait_for(lambda: len(plans[-1].poses) != 3, 1)
+            self.assertEqual(len(plans[-1].poses), 3)
 
     def test_rejected_child_releases_parent(self):
         result, _ = self.cancel_while_child_is_pending(accept=False)

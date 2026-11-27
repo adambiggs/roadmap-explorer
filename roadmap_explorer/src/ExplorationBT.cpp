@@ -243,6 +243,7 @@ uint16_t RoadmapExplorationBT::tickOnceWithSleep()
 uint16_t RoadmapExplorationBT::tickOnceWithSleep(const std::function<bool()> & canceled)
 {
   blackboard->set("exploration_canceled", canceled);
+  session_shown_ = true;
   int bt_sleep_duration = parameterInstance.getValue<int64_t>("explorationBT.bt_sleep_ms");
   std::this_thread::sleep_for(std::chrono::milliseconds(bt_sleep_duration));
   if(sensor_simulator_)
@@ -354,12 +355,16 @@ void RoadmapExplorationBT::halt()
   }
   LOG_WARN("Goal is terminated");
   // The session is over and Nav2 has stopped planning for it: stop viewers
-  // showing its plans and frontiers.
-  const auto frame_id = explore_costmap_ros_->getGlobalFrameID();
-  rosVisualizerInstance.clearAll(frame_id);
-  full_path_optimizer_->clearVisualizations(frame_id);
-  frontierRoadmapInstance.clearVisualizations(frame_id);
-  nav2_interface_->clearPlan(frame_id);
+  // showing its plans and frontiers. A later halt, such as on deactivation,
+  // must not clear a plan another navigator has published since.
+  if (session_shown_) {
+    session_shown_ = false;
+    const auto frame_id = explore_costmap_ros_->getGlobalFrameID();
+    rosVisualizerInstance.clearAll(frame_id);
+    full_path_optimizer_->clearVisualizations(frame_id);
+    frontierRoadmapInstance.clearVisualizations(frame_id);
+    nav2_interface_->clearPlan(frame_id);
+  }
   // if(save_exploration_data)
   // {
   //   if (sensor_simulator_ == nullptr)
